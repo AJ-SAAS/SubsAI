@@ -1,67 +1,62 @@
+// Features/Dashboard/DashboardView.swift
 import SwiftUI
 
 struct DashboardView: View {
-    @StateObject private var viewModel = DashboardViewModel()
-    @State private var errorMessage: String?
+    @StateObject private var vm = HomeViewModel()
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    Text("How You're Doing")
-                        .font(.title2)
-                        .bold()
-
-                    if let error = errorMessage {
-                        Text("Error: \(error)")
-                            .foregroundColor(.red)
+                VStack(spacing: 24) {
+                    if vm.isLoading {
+                        ProgressView("Loading your channel…")
                             .padding()
+                    } else if let channel = vm.channelInfo {
+                        VStack(spacing: 20) {
+                            AsyncImage(url: URL(string: channel.thumbnailURL)) { image in
+                                image.resizable().scaledToFill()
+                            } placeholder: {
+                                Circle().fill(.gray)
+                            }
+                            .frame(width: 120, height: 120)
+                            .clipShape(Circle())
+
+                            Text(channel.title)
+                                .font(.title2.bold())
+
+                            VStack(spacing: 16) {
+                                StatCard(title: "Subscribers",   value: channel.subscribers.formatted(),   iconName: "person.3.fill", color: .blue)
+                                StatCard(title: "Total Views",   value: channel.totalViews.formatted(),    iconName: "eye.fill",      color: .green)
+                                StatCard(title: "Videos",        value: channel.totalVideos.formatted(),   iconName: "play.rectangle.fill", color: .orange)
+                                StatCard(title: "Watch Hours",   value: "Coming soon",                     iconName: "clock.fill",    color: .purple)
+                            }
+                        }
+                        .padding()
+                    } else {
+                        Text(vm.errorMessage ?? "Sign in to see your stats")
+                            .foregroundColor(.secondary)
                     }
 
-                    HStack(spacing: 10) {
-                        StatCard(title: "Subscribers", value: viewModel.subscribers, icon: "person.3.fill")
-                        StatCard(title: "Views", value: viewModel.views, icon: "eye.fill")
-                        StatCard(title: "Videos", value: viewModel.videos, icon: "video.fill")
+                    Button("Refresh") {
+                        vm.loadChannelStats()
                     }
-
-                    Text("Milestones")
-                        .font(.title2)
-                        .bold()
-                    Text("Ready to smash your next goals?")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-
-                    VStack(spacing: 10) {
-                        GoalCard(title: "Subscribers", current: viewModel.subscribers, goal: 10000)
-                        GoalCard(title: "Views", current: viewModel.views, goal: 1000000)
-                        GoalCard(title: "Videos", current: viewModel.videos, goal: 100)
-                    }
+                    .buttonStyle(.borderedProminent)
                 }
                 .padding()
             }
             .navigationTitle("Dashboard")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    NavigationLink("Monetization", destination: MonetizationView())
-                }
-            }
-            .onAppear {
-                print("DashboardView: View appeared")
-                viewModel.fetchStats { error in
-                    if let error = error {
-                        errorMessage = error.localizedDescription
-                        print("DashboardView: Error from viewModel: \(error.localizedDescription)")
-                    }
-                }
+            .task {
+                vm.loadChannelStats()
             }
         }
     }
 }
 
-#if DEBUG
-struct DashboardView_Previews: PreviewProvider {
-    static var previews: some View {
-        DashboardView()
+// Nice number formatting
+extension Int {
+    func formatted() -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        return f.string(from: NSNumber(value: self)) ?? "\(self)"
     }
 }
-#endif

@@ -1,24 +1,19 @@
-//
-//  ContentView.swift
-//  SubsAI
-//
-//  Created by Work Laptop on 21/07/2025.
-//
-
+// ContentView.swift
 import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var auth = AuthManager.shared
+    
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        Group {
+            if auth.isSignedIn {
+                MainTabView()
+            } else {
+                OnboardingView()
+            }
         }
-        .padding()
+        .onReceive(NotificationCenter.default.publisher(for: .youtubeAccessRevoked)) { _ in
+            auth.isSignedIn = false
+        }
     }
-}
-
-#Preview {
-    ContentView()
 }

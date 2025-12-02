@@ -7,21 +7,9 @@
 		<dict>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
-			<key>CFBundleURLName</key>
-			<string>xyz.subsai.SubsAI</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleapis.apps.587539011439-qu41qnrbgn8iu3s3hojmatrnn9erttg0</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLName</key>
-			<string>com.google.</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.googleusercontent.apps.574710533522-h2civa8q5lpt3kv16ga0aemd5a4k4itt</string>
+				<string>com.googleusercontent.apps.574710533522-nnjo4nh3h1629ca1nh08ikcskfqqa20i</string>
 			</array>
 		</dict>
 	</array>
@@ -34,8 +22,6 @@
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
-		<key>UISceneConfigurations</key>
-		<dict/>
 	</dict>
 </dict>
 </plist>

@@ -1,71 +1,46 @@
+// Features/Onboarding/OnboardingView.swift
 import SwiftUI
-import FirebaseAuth
+import GoogleSignInSwift
 
 struct OnboardingView: View {
     @StateObject private var viewModel = OnboardingViewModel()
-    @State private var errorMessage: String?
-    @State private var isLoading = false
 
     var body: some View {
-        VStack {
-            Text("Subs AI")
+        VStack(spacing: 40) {
+            Spacer()
+
+            Image(systemName: "play.rectangle.fill")
+                .font(.system(size: 100))
+                .foregroundColor(.red)
+
+            Text("SubsAI")
                 .font(.largeTitle)
-                .bold()
+                .fontWeight(.bold)
 
-            Text("Connect your YouTube channel")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+            Text("Sign in with your YouTube channel to see real-time stats")
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
 
-            Button("Sign in with Google") {
-                print("OnboardingView: Sign in button tapped")
-                isLoading = true
-                viewModel.signInWithGoogle { result in
-                    isLoading = false
-                    switch result {
-                    case .success:
-                        print("OnboardingView: Sign-in successful")
-                    case .failure(let error):
-                        errorMessage = error.localizedDescription
-                        print("OnboardingView: Sign-in failed: \(error.localizedDescription) (Code: \((error as NSError).code))")
-                    }
+            if viewModel.isLoading {
+                ProgressView("Signing in…")
+                    .progressViewStyle(.circular)
+            } else {
+                GoogleSignInButton(scheme: .dark, style: .wide, state: .normal) {
+                    Task { await viewModel.signInWithGoogle() }
                 }
+                .frame(height: 50)
+                .padding(.horizontal, 40)
             }
-            .font(.headline)
-            .padding()
-            .frame(maxWidth: .infinity)
-            .background(isLoading ? Color.gray : Color.blue)
-            .foregroundColor(.white)
-            .cornerRadius(12)
-            .padding()
-            .disabled(isLoading)
 
-            if let error = errorMessage {
+            if let error = viewModel.errorMessage {
                 Text("Error: \(error)")
                     .foregroundColor(.red)
+                    .multilineTextAlignment(.center)
                     .padding()
-                    .background(Color.red.opacity(0.1))
-                    .cornerRadius(8)
             }
 
-            if isLoading {
-                ProgressView("Signing in...")
-                    .padding()
-            }
+            Spacer()
         }
         .padding()
-        .fullScreenCover(isPresented: $viewModel.isAuthenticated) {
-            DashboardView()
-        }
-        .onAppear {
-            print("OnboardingView: View appeared")
-        }
     }
 }
-
-#if DEBUG
-struct OnboardingView_Previews: PreviewProvider {
-    static var previews: some View {
-        OnboardingView()
-    }
-}
-#endif
