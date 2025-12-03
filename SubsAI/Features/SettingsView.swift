@@ -32,7 +32,11 @@ struct SettingsView: View {
                 }
 
                 if !statusMessage.isEmpty {
-                    Section { Text(statusMessage).font(.caption).foregroundColor(.secondary) }
+                    Section {
+                        Text(statusMessage)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
             .navigationTitle("Settings")
@@ -42,15 +46,32 @@ struct SettingsView: View {
                     Task { await revokeAccess() }
                 }
             } message: {
-                Text("You can reconnect anytime.")
+                Text("This will sign you out completely. You can reconnect anytime.")
             }
         }
     }
 
+    @MainActor
     private func revokeAccess() async {
-        statusMessage = "Disconnecting..."
-        AuthManager.shared.signOut()  // ← This does everything safely
-        statusMessage = "Disconnected from YouTube"
+        statusMessage = "Signing out..."
+
+        // Sign out from Google (clears the cached user)
+        GIDSignIn.sharedInstance.signOut()
+
+        // Optional: completely revoke access (breaks refresh tokens too)
+        do {
+            try await GIDSignIn.sharedInstance.disconnect()
+            print("Google access revoked completely")
+        } catch {
+            print("Disconnect failed (this is okay):", error)
+        }
+
+        // Clear your app state
+        AuthManager.shared.signOut()
+
+        statusMessage = "Signed out successfully"
+        
+        // Notify rest of app
         NotificationCenter.default.post(name: .youtubeAccessRevoked, object: nil)
     }
 }
