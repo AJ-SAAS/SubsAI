@@ -8,7 +8,7 @@ struct DashboardView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 0) {
-                    // FULL QUALITY BANNER (2560×1440)
+                    // Banner
                     if let bannerURL = vm.channelInfo?.bannerURL,
                        let url = URL(string: bannerURL + "=w2560-h1440-c-k-c0x00ffffff-no-rj") {
                         AsyncImage(url: url) { phase in
@@ -17,9 +17,7 @@ struct DashboardView: View {
                                 image
                                     .resizable()
                                     .scaledToFill()
-                            case .failure(_):
-                                fallbackBanner
-                            case .empty:
+                            case .empty, .failure:
                                 fallbackBanner
                             @unknown default:
                                 fallbackBanner
@@ -29,7 +27,7 @@ struct DashboardView: View {
                         .clipped()
                         .overlay(
                             LinearGradient(
-                                colors: [.clear, .black.opacity(0.8)],
+                                colors: [.clear, .black.opacity(0.75)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
@@ -38,22 +36,31 @@ struct DashboardView: View {
                         fallbackBanner
                     }
 
-                    // PROFILE + STATS
-                    VStack(spacing: 20) {
+                    // Profile + Stats
+                    VStack(spacing: 24) {
                         if vm.isLoading {
-                            ProgressView("Loading your channel…").padding()
-                        } else if let channel = vm.channelInfo {
-                            ZStack(alignment: .bottomLeading) {
-                                Color.clear.frame(height: 70)
+                            VStack(spacing: 16) {
+                                ProgressView()
+                                Text("Loading your channel stats…")
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.top, 60)
+                        }
 
+                        if let channel = vm.channelInfo {
+                            // Profile picture overlay
+                            ZStack(alignment: .bottomLeading) {
+                                Color.clear.frame(height: 80)
                                 AsyncImage(url: URL(string: channel.thumbnailURL)) { image in
                                     image.resizable().scaledToFill()
-                                } placeholder: { Circle().fill(.gray) }
-                                .frame(width: 130, height: 130)
+                                } placeholder: {
+                                    Circle().fill(.gray.opacity(0.3))
+                                }
+                                .frame(width: 140, height: 140)
                                 .clipShape(Circle())
-                                .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 5))
-                                .offset(y: -65)
-                                .padding(.leading, 20)
+                                .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 6))
+                                .offset(y: -70)
+                                .padding(.leading, 24)
                             }
 
                             VStack(spacing: 8) {
@@ -67,60 +74,79 @@ struct DashboardView: View {
                             }
                             .padding(.top, -60)
 
-                            VStack(spacing: 18) {
+                            VStack(spacing: 16) {
                                 StatCard(title: "Subscribers", value: channel.subscribers.formatted(), iconName: "person.3.fill", color: .blue)
                                 StatCard(title: "Total Views", value: channel.totalViews.formatted(), iconName: "eye.fill", color: .green)
                                 StatCard(title: "Videos", value: channel.totalVideos.formatted(), iconName: "play.rectangle.fill", color: .orange)
                                 StatCard(
                                     title: "Watch Hours",
                                     value: channel.totalWatchTime > 0
-                                        ? String(format: "%.0f", channel.totalWatchTime)
+                                        ? String(format: "%.0f hrs", channel.totalWatchTime)
                                         : "Loading…",
                                     iconName: "clock.fill",
                                     color: .purple
                                 )
                             }
-                            .padding(.top, 10)
-                        } else {
-                            Text(vm.errorMessage ?? "Sign in to see your stats")
-                                .foregroundColor(.secondary)
-                                .padding()
+                            .padding(.horizontal)
+
+                            if let error = vm.errorMessage {
+                                Text(error)
+                                    .font(.subheadline)
+                                    .foregroundColor(.red)
+                                    .multilineTextAlignment(.center)
+                                    .padding()
+                                    .background(Color.red.opacity(0.1))
+                                    .cornerRadius(8)
+                            }
                         }
 
                         Button("Refresh") {
-                            vm.loadChannelStats()
+                            Task { await vm.loadChannelStats() }
                         }
                         .buttonStyle(.borderedProminent)
-                        .padding(.top, 30)
+                        .controlSize(.large)
+                        .padding(.top, 20)
+                        .disabled(vm.isLoading)
                     }
                     .padding()
-                    .padding(.top, 20)
                 }
+            }
+            .refreshable {
+                await vm.loadChannelStats()
             }
             .navigationTitle("Dashboard")
             .navigationBarTitleDisplayMode(.inline)
-            .task { vm.loadChannelStats() }
             .ignoresSafeArea(edges: .top)
+            .task {
+                await vm.loadChannelStats()
+            }
         }
     }
 
     private var fallbackBanner: some View {
-        Rectangle()
+        return Rectangle()  // ← Added explicit return here
             .fill(LinearGradient(gradient: Gradient(colors: [.gray, .black]), startPoint: .top, endPoint: .bottom))
             .frame(height: 220)
             .overlay(
                 Text("Your Channel Banner")
                     .font(.title2.bold())
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundColor(.white.opacity(0.6))
             )
+    }
+}
+
+// Helper extensions unchanged...
+extension Double {
+    func formatted(_ style: FloatingPointFormatStyle<Double> = .number) -> String {
+        style.format(self)
     }
 }
 
 extension Int {
     func formatted() -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        f.groupingSeparator = ","
-        return f.string(from: NSNumber(value: self)) ?? "\(self)"
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        return formatter.string(from: NSNumber(value: self)) ?? "\(self)"
     }
 }
