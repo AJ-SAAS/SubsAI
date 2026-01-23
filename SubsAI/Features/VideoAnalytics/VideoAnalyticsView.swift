@@ -18,10 +18,26 @@ struct VideoAnalyticsView: View {
                             .font(.headline)
                         
                         HStack {
-                            StatLabel(name: "Views", value: "\(video.views)", color: vm.statusColor(video, metric: "Views"))
-                            StatLabel(name: "Watch Hours", value: String(format: "%.1f", video.watchTime) + "h", color: vm.statusColor(video, metric: "Watch Time"))
-                            StatLabel(name: "Thumbnail CTR", value: String(format: "%.1f", video.thumbnailCTR) + "%", color: vm.statusColor(video, metric: "Thumbnail CTR"))
-                            StatLabel(name: "Drop-Off", value: "\(video.dropOffSeconds)s", color: vm.statusColor(video, metric: "Drop-off"))
+                            StatLabel(
+                                name: "Views",
+                                value: "\(video.views)",
+                                color: vm.statusColor(video, metric: "Views")
+                            )
+                            StatLabel(
+                                name: "Watch Hours",
+                                value: String(format: "%.1f", video.watchTime) + "h",
+                                color: vm.statusColor(video, metric: "Watch Time")
+                            )
+                            StatLabel(
+                                name: "Thumbnail CTR",
+                                value: String(format: "%.1f", video.thumbnailCTR) + "%",
+                                color: vm.statusColor(video, metric: "Thumbnail CTR")
+                            )
+                            StatLabel(
+                                name: "Drop-Off",
+                                value: "\(video.dropOffSeconds)s",
+                                color: vm.statusColor(video, metric: "Drop-off")
+                            )
                         }
                         
                         let issues = vm.needsImprovement(video)

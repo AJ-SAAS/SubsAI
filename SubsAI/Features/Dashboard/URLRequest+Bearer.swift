@@ -1,4 +1,3 @@
-// URLRequest+Bearer.swift
 import Foundation
 
 extension URLRequest {

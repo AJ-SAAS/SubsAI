@@ -1,34 +1,52 @@
-// Features/VideoAnalytics/VideoAnalyticsViewModel.swift
 import SwiftUI
 
+// MARK: - VideoStat model
 struct VideoStat: Identifiable, Codable {
-    // Local UUID that stays in the app — we don’t want JSON to overwrite it
-    let id = UUID()
-    
+    let id: UUID
     let title: String
     let views: Int
     let watchTime: Double
     let dropOffSeconds: Double
     let thumbnailCTR: Double
+    
+    // Benchmarks for comparison
     let benchmarkViews: Int
     let benchmarkWatchTime: Double
     let benchmarkDropOff: Double
     let benchmarkThumbnailCTR: Double
     
-    // This tells Codable: "Don't touch the id — it's generated locally"
-    private enum CodingKeys: String, CodingKey {
-        case title, views, watchTime, dropOffSeconds, thumbnailCTR
-        case benchmarkViews, benchmarkWatchTime, benchmarkDropOff, benchmarkThumbnailCTR
-        // id is intentionally excluded → no more warning!
+    init(
+        id: UUID = UUID(),
+        title: String,
+        views: Int,
+        watchTime: Double,
+        dropOffSeconds: Double,
+        thumbnailCTR: Double,
+        benchmarkViews: Int,
+        benchmarkWatchTime: Double,
+        benchmarkDropOff: Double,
+        benchmarkThumbnailCTR: Double
+    ) {
+        self.id = id
+        self.title = title
+        self.views = views
+        self.watchTime = watchTime
+        self.dropOffSeconds = dropOffSeconds
+        self.thumbnailCTR = thumbnailCTR
+        self.benchmarkViews = benchmarkViews
+        self.benchmarkWatchTime = benchmarkWatchTime
+        self.benchmarkDropOff = benchmarkDropOff
+        self.benchmarkThumbnailCTR = benchmarkThumbnailCTR
     }
 }
 
+// MARK: - VideoAnalytics ViewModel
 @MainActor
 final class VideoAnalyticsViewModel: ObservableObject {
     @Published var videos: [VideoStat] = []
 
     func loadVideos() async {
-        // Mock data for now — later you’ll replace this with real YouTube Analytics API
+        // Mock data — replace later with real API
         videos = [
             VideoStat(
                 title: "My Best Video Ever",

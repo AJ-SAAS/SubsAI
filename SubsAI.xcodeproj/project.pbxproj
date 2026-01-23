@@ -9,10 +9,13 @@
 /* Begin PBXBuildFile section */
 		927ABD432EDEE35F005812CB /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 927ABD422EDEE35F005812CB /* GoogleSignIn */; };
 		927ABD452EDEE35F005812CB /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 927ABD442EDEE35F005812CB /* GoogleSignInSwift */; };
+		9292DDCF2F1902BD00D525A4 /* KeychainAccess in Frameworks */ = {isa = PBXBuildFile; productRef = 9233F4052E30087F003620EC /* KeychainAccess */; };
 		92CC2D572E2F82720008B48C /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC2D562E2F82720008B48C /* FirebaseAuth */; };
 		92CC2D592E2F82720008B48C /* FirebaseAuthCombine-Community in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC2D582E2F82720008B48C /* FirebaseAuthCombine-Community */; };
 		92CC2D5B2E2F82720008B48C /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC2D5A2E2F82720008B48C /* FirebaseFirestore */; };
 		92CC2D5D2E2F82720008B48C /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 92CC2D5C2E2F82720008B48C /* FirebaseStorage */; };
+		92D834B82F23AADC00E7A629 /* GoogleAPIClientForREST_YouTube in Frameworks */ = {isa = PBXBuildFile; productRef = 92D834B72F23AADC00E7A629 /* GoogleAPIClientForREST_YouTube */; };
+		92D834BA2F23AADC00E7A629 /* GoogleAPIClientForREST_YouTubeAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 92D834B92F23AADC00E7A629 /* GoogleAPIClientForREST_YouTubeAnalytics */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -74,10 +77,13 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9292DDCF2F1902BD00D525A4 /* KeychainAccess in Frameworks */,
 				927ABD432EDEE35F005812CB /* GoogleSignIn in Frameworks */,
+				92D834BA2F23AADC00E7A629 /* GoogleAPIClientForREST_YouTubeAnalytics in Frameworks */,
 				92CC2D572E2F82720008B48C /* FirebaseAuth in Frameworks */,
 				92CC2D5D2E2F82720008B48C /* FirebaseStorage in Frameworks */,
 				927ABD452EDEE35F005812CB /* GoogleSignInSwift in Frameworks */,
+				92D834B82F23AADC00E7A629 /* GoogleAPIClientForREST_YouTube in Frameworks */,
 				92CC2D592E2F82720008B48C /* FirebaseAuthCombine-Community in Frameworks */,
 				92CC2D5B2E2F82720008B48C /* FirebaseFirestore in Frameworks */,
 			);
@@ -147,6 +153,8 @@
 				9233F4052E30087F003620EC /* KeychainAccess */,
 				927ABD422EDEE35F005812CB /* GoogleSignIn */,
 				927ABD442EDEE35F005812CB /* GoogleSignInSwift */,
+				92D834B72F23AADC00E7A629 /* GoogleAPIClientForREST_YouTube */,
+				92D834B92F23AADC00E7A629 /* GoogleAPIClientForREST_YouTubeAnalytics */,
 			);
 			productName = SubsAI;
 			productReference = 92CC2D292E2E9EA50008B48C /* SubsAI.app */;
@@ -234,6 +242,7 @@
 				92CC2D552E2F82720008B48C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				9233F4042E30087F003620EC /* XCRemoteSwiftPackageReference "KeychainAccess" */,
 				927ABD412EDEE35F005812CB /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+				92D834B62F23AADC00E7A629 /* XCRemoteSwiftPackageReference "google-api-objectivec-client-for-rest" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 92CC2D2A2E2E9EA50008B48C /* Products */;
@@ -636,6 +645,14 @@
 				minimumVersion = 12.0.0;
 			};
 		};
+		92D834B62F23AADC00E7A629 /* XCRemoteSwiftPackageReference "google-api-objectivec-client-for-rest" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/google-api-objectivec-client-for-rest";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -673,6 +690,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 92CC2D552E2F82720008B48C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseStorage;
+		};
+		92D834B72F23AADC00E7A629 /* GoogleAPIClientForREST_YouTube */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92D834B62F23AADC00E7A629 /* XCRemoteSwiftPackageReference "google-api-objectivec-client-for-rest" */;
+			productName = GoogleAPIClientForREST_YouTube;
+		};
+		92D834B92F23AADC00E7A629 /* GoogleAPIClientForREST_YouTubeAnalytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92D834B62F23AADC00E7A629 /* XCRemoteSwiftPackageReference "google-api-objectivec-client-for-rest" */;
+			productName = GoogleAPIClientForREST_YouTubeAnalytics;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

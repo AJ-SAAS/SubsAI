@@ -4,16 +4,26 @@ import SwiftUI
 struct MainTabView: View {
     var body: some View {
         TabView {
+
+            // MARK: - Home / Channel Overview
             DashboardView()
                 .tabItem {
                     Label("Home", systemImage: "house.fill")
                 }
 
-            VideoAnalyticsPlaceholderView()
+            // MARK: - Coach (Video Performance Guidance)
+            CoachView()
+                .tabItem {
+                    Label("Coach", systemImage: "brain.head.profile")
+                }
+
+            // MARK: - Video Analytics
+            VideoAnalyticsView()
                 .tabItem {
                     Label("Analytics", systemImage: "chart.bar.fill")
                 }
 
+            // MARK: - Settings
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gear")
@@ -21,73 +31,18 @@ struct MainTabView: View {
         }
         .tint(.blue)
         .onAppear {
-            // Make tab bar look clean and modern
-            let appearance = UITabBarAppearance()
-            appearance.configureWithOpaqueBackground()
-            appearance.backgroundColor = UIColor.systemBackground
-            UITabBar.appearance().scrollEdgeAppearance = appearance
-            UITabBar.appearance().standardAppearance = appearance
+            configureTabBarAppearance()
         }
     }
-}
 
-// Beautiful placeholder until the real analytics screen is ready
-struct VideoAnalyticsPlaceholderView: View {
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 28) {
-                Image(systemName: "chart.xyaxis.line")
-                    .font(.system(size: 80))
-                    .foregroundColor(.blue)
-                    .opacity(0.8)
+    // MARK: - Tab Bar Styling
+    private func configureTabBarAppearance() {
+        let appearance = UITabBarAppearance()
+        appearance.configureWithOpaqueBackground()
+        appearance.backgroundColor = UIColor.systemBackground
 
-                VStack(spacing: 12) {
-                    Text("Video Analytics")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-
-                    Text("Coming Very Soon")
-                        .font(.title2)
-                        .foregroundColor(.secondary)
-                }
-
-                VStack(alignment: .leading, spacing: 16) {
-                    FeatureRow(icon: "dollarsign.circle.fill", text: "Revenue per video")
-                    FeatureRow(icon: "eye.fill", text: "Click-through rate (CTR)")
-                    FeatureRow(icon: "clock.fill", text: "Average view duration")
-                    FeatureRow(icon: "brain.head.profile", text: "AI thumbnail & title suggestions")
-                }
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(16)
-                .padding(.horizontal)
-
-                Spacer()
-            }
-            .padding()
-            .navigationTitle("Analytics")
-            .navigationBarTitleDisplayMode(.large)
-        }
-    }
-}
-
-struct FeatureRow: View {
-    let icon: String
-    let text: String
-    
-    var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundColor(.blue)
-                .frame(width: 40)
-            Text(text)
-                .font(.body)
-            Spacer()
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundColor(.green)
-                .opacity(0.6)
-        }
+        UITabBar.appearance().standardAppearance = appearance
+        UITabBar.appearance().scrollEdgeAppearance = appearance
     }
 }
 
