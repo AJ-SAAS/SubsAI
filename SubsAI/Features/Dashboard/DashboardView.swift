@@ -3,9 +3,9 @@ import SwiftUI
 
 struct DashboardView: View {
     @StateObject private var vm = HomeViewModel()
-    @State private var authErrorMessage: String?
     @State private var showGoalSheet = false
     @State private var customGoals: [(GoalType, Int)] = []
+    @State private var authErrorMessage: String?
 
     private let subsMilestones = [
         1_000, 5_000, 10_000, 25_000, 50_000,
@@ -35,19 +35,29 @@ struct DashboardView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 20) {
 
+                        // 1 — Channel header
                         if let channel = vm.channelInfo {
                             channelHeader(channel)
                         }
 
+                        // 2 — Focus card (new)
+                        if let channel = vm.channelInfo {
+                            focusCard(channel)
+                        }
+
+                        // 3 — Latest video (moved up)
+                        latestVideoSection()
+
+                        // 4 — Period selector
                         periodSelector
 
+                        // 5 — Stats grid
                         if let channel = vm.channelInfo {
                             statsGrid(channel)
                             aiInsightStrip(channel)
                         }
 
-                        latestVideoSection()
-
+                        // 6 — Milestones
                         if let channel = vm.channelInfo {
                             milestonesSection(channel)
                         }
@@ -140,6 +150,112 @@ struct DashboardView: View {
         .padding(.top, 8)
     }
 
+    // MARK: - Focus card (new)
+    private func focusCard(_ channel: Channel) -> some View {
+        let focus = channelFocus(channel)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(focus.color)
+                    .frame(width: 5, height: 5)
+                Text("Your focus right now")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(focus.color)
+                    .kerning(1.0)
+                    .textCase(.uppercase)
+            }
+
+            Text(focus.title)
+                .font(.system(size: 16, weight: .medium, design: .serif))
+                .foregroundColor(AppTheme.textPrimary)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(focus.body)
+                .font(.system(size: 13))
+                .foregroundColor(AppTheme.textSecondary)
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(focus.color.opacity(0.06))
+        .cornerRadius(20)
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(focus.color.opacity(0.2), lineWidth: 0.5)
+        )
+    }
+
+    // MARK: - Focus logic
+    private struct ChannelFocus {
+        let title: String
+        let body: String
+        let color: Color
+    }
+
+    private func channelFocus(_ channel: Channel) -> ChannelFocus {
+        // Use viewGrowth as a proxy for avg CTR signal
+        // Primary signals: subscriber growth, view growth, watch time
+        let netSubs = vm.subscriberGrowth?.absolute ?? 0
+        let views   = vm.viewGrowth?.absolute ?? 0
+        let watchHours = channel.watchTime
+
+        // No data yet
+        if views == 0 && watchHours == 0 {
+            return ChannelFocus(
+                title: "Start by uploading consistently.",
+                body: "Your channel doesn't have enough recent data to diagnose yet. The fastest way to grow is to keep uploading — the patterns will show up within a few videos.",
+                color: AppTheme.accent
+            )
+        }
+
+        // Losing subscribers
+        if netSubs < -2 {
+            return ChannelFocus(
+                title: "You're losing more subscribers than you're gaining.",
+                body: "This usually means your recent videos aren't matching what your audience subscribed for. Look at your last 3 videos on the Coach page — check what changed.",
+                color: .red
+            )
+        }
+
+        // Views low relative to watch hours — good retention, low reach
+        // This suggests a CTR / discovery issue
+        if watchHours > 0 && views < 500 {
+            return ChannelFocus(
+                title: "Your content is being watched — but not enough people are clicking.",
+                body: "You have solid watch time, which means viewers who do watch are staying. The problem is getting them to click in the first place. Your thumbnails or titles need work.",
+                color: .orange
+            )
+        }
+
+        // Flat or minimal growth
+        if netSubs == 0 && views < 1000 {
+            return ChannelFocus(
+                title: "Growth has stalled this period.",
+                body: "Views and subscriber gains are both low. Check the Coach page — it'll tell you which of your videos has the best chance of turning this around.",
+                color: .yellow
+            )
+        }
+
+        // Positive growth
+        if netSubs > 0 && views > 0 {
+            return ChannelFocus(
+                title: "Your channel is growing. Keep the momentum.",
+                body: "You gained subscribers and views \(vm.selectedPeriod.label). The best thing you can do right now is upload again — consistency compounds.",
+                color: .green
+            )
+        }
+
+        // Default
+        return ChannelFocus(
+            title: "Check your latest video performance.",
+            body: "Tap the video below to see how it's doing and what to improve for your next upload.",
+            color: AppTheme.accent
+        )
+    }
+
     // MARK: - Period selector
     private var periodSelector: some View {
         HStack(spacing: 6) {
@@ -203,7 +319,6 @@ struct DashboardView: View {
                 color: .cyan
             )
 
-            // ✅ No fake delta — shows total video count only
             StatCard(
                 title: "Videos",
                 value: channel.videoCount.formatted(),
