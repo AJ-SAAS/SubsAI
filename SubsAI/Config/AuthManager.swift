@@ -1,4 +1,3 @@
-// AuthManager.swift
 import Foundation
 import Combine
 import GoogleSignIn
@@ -6,43 +5,60 @@ import GoogleSignIn
 @MainActor
 final class AuthManager: ObservableObject {
     static let shared = AuthManager()
-    
-    @Published var isSignedIn: Bool = false
-    @Published var accessToken: String? = nil
-    
+
+    @Published private(set) var isSignedIn: Bool = false
+    @Published private(set) var accessToken: String? = nil
+    @Published var authError: AuthError? = nil
+
     private init() {
-        // Restore previous sign-in state on app launch
         restorePreviousSignInIfAvailable()
     }
-    
+
+    // MARK: - Restore Previous Sign-In
     private func restorePreviousSignInIfAvailable() {
         GIDSignIn.sharedInstance.restorePreviousSignIn { [weak self] user, error in
-            if let user = user, error == nil {
-                Task { @MainActor in
-                    self?.accessToken = user.accessToken.tokenString
-                    self?.isSignedIn = true
+            guard let self, let user, error == nil else { return }
+
+            Task { @MainActor in          // ✅ explicitly runs on MainActor
+                do {
+                    let refreshedUser = try await user.refreshTokensIfNeeded()
+                    self.accessToken = refreshedUser.accessToken.tokenString
+                    self.isSignedIn = true
+                } catch {
+                    self.signOut()
                 }
             }
         }
     }
-    
-    func signIn(accessToken: String) {
-        self.accessToken = accessToken
-        self.isSignedIn = true
+
+    // MARK: - Successful Sign-In
+    func handleSuccessfulSignIn(user: GIDGoogleUser) {
+        accessToken = user.accessToken.tokenString
+        isSignedIn = true
+        authError = nil
     }
-    
-    // FULL SIGN OUT — clears Google session + your state
+
+    // MARK: - Token Access
+    func getValidToken() async throws -> String {
+        guard let user = GIDSignIn.sharedInstance.currentUser else {
+            signOut()
+            throw URLError(.userAuthenticationRequired)
+        }
+
+        do {
+            let refreshedUser = try await user.refreshTokensIfNeeded()
+            return refreshedUser.accessToken.tokenString
+        } catch {
+            signOut()
+            throw error
+        }
+    }
+
+    // MARK: - Full Sign-Out
     func signOut() {
-        GIDSignIn.sharedInstance.signOut()   // This clears Google session
+        GIDSignIn.sharedInstance.signOut()
         accessToken = nil
         isSignedIn = false
-        print("Signed out completely")
-    }
-    
-    func getValidToken() async throws -> String {
-        guard let token = accessToken else {
-            throw NSError(domain: "AuthManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Not signed in"])
-        }
-        return token
+        print("🔒 Signed out completely")
     }
 }

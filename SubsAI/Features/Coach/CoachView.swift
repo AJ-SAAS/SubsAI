@@ -1,57 +1,337 @@
+// Features/Coach/CoachView.swift
 import SwiftUI
 
+enum VideoSortOrder: String, CaseIterable {
+    case priority       = "Priority"
+    case bestPerforming = "Best performing"
+    case leastPerforming = "Least performing"
+    case latest         = "Latest"
+    case oldest         = "Oldest"
+    case mostViews      = "Most views"
+}
+
 struct CoachView: View {
-    @StateObject private var vm = CoachViewModel()
+
+    @ObservedObject var vm: CoachViewModel
+    @State private var authError: AuthError?
+    @State private var sortOrder: VideoSortOrder = .bestPerforming
+    @State private var showSortSheet = false
+
+    init(vm: CoachViewModel) {
+        self.vm = vm
+    }
+
+    private var sortedVideos: [Video] {
+        switch sortOrder {
+        case .priority:
+            return vm.videosByPriority
+        case .bestPerforming:
+            return vm.videos.sorted { $0.healthScore > $1.healthScore }
+        case .leastPerforming:
+            return vm.videos.sorted { $0.healthScore < $1.healthScore }
+        case .latest:
+            return vm.videos.sorted { $0.publishedAt > $1.publishedAt }
+        case .oldest:
+            return vm.videos.sorted { $0.publishedAt < $1.publishedAt }
+        case .mostViews:
+            return vm.videos.sorted { $0.views > $1.views }
+        }
+    }
 
     var body: some View {
         NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 32) {
+            ZStack {
+                AppTheme.background.ignoresSafeArea()
 
-                    // MARK: - Latest Video Coach Card
-                    if let latest = vm.latestVideo {
-                        Section {
-                            NavigationLink {
-                                CoachReviewView(video: latest)
-                            } label: {
-                                LatestCoachCard(video: latest)
-                            }
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 16) {
+
+                        // MARK: - Title
+                        Text("Coach")
+                            .font(.system(size: 28, weight: .medium, design: .serif))
+                            .foregroundColor(AppTheme.textPrimary)
+                            .padding(.top, 8)
+
+                        // MARK: - Diagnosis card
+                        if let diagnosis = vm.diagnosis {
+                            ImprovedDiagnosisCard(
+                                diagnosis: diagnosis,
+                                report: vm.intelligenceReport
+                            )
+                        } else if vm.isLoading {
+                            diagnosisPlaceholder
                         }
-                        .padding(.bottom, 8)
-                    }
 
-                    // MARK: - All Videos List
-                    if !vm.videos.isEmpty {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("All Videos")
-                                .font(.headline)
-                                .padding(.horizontal, 4)
+                        // MARK: - Videos
+                        if !vm.videos.isEmpty {
 
-                            ForEach(vm.videos) { video in
-                                NavigationLink {
-                                    CoachReviewView(video: video)
+                            // Sort header
+                            HStack {
+                                Text("Your videos")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundColor(AppTheme.textSecondary)
+                                    .kerning(1.0)
+                                    .textCase(.uppercase)
+
+                                Spacer()
+
+                                Button {
+                                    showSortSheet = true
                                 } label: {
-                                    CoachVideoCard(video: video)
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "arrow.up.arrow.down")
+                                            .font(.system(size: 11))
+                                        Text(sortOrder.rawValue)
+                                            .font(.system(size: 12))
+                                    }
+                                    .foregroundColor(AppTheme.textSecondary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(Color(.systemFill))
+                                    .cornerRadius(10)
                                 }
                             }
+                            .padding(.top, 4)
+
+                            // Video list
+                            ForEach(sortedVideos) { video in
+                                NavigationLink {
+                                    CoachReviewView(video: video, allVideos: vm.videos)
+                                } label: {
+                                    CoachVideoCard(
+                                        video: video,
+                                        replicationScore: vm.intelligenceReport?
+                                            .replicationScore(for: video)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+
+                        } else if vm.isLoading {
+                            loadingState
+                        } else {
+                            emptyState
                         }
-                    } else {
-                        Text("No videos available")
-                            .foregroundColor(.secondary)
-                            .padding(.top, 20)
+
+                        Spacer(minLength: 40)
+                    }
+                    .padding(.horizontal, 18)
+                }
+            }
+            .navigationBarHidden(true)
+        }
+        .confirmationDialog("Sort videos by", isPresented: $showSortSheet, titleVisibility: .visible) {
+            ForEach(VideoSortOrder.allCases, id: \.self) { order in
+                Button(order.rawValue) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        sortOrder = order
                     }
                 }
-                .padding(.horizontal)
-                .padding(.top, 16)
             }
-            .navigationTitle("Coach")
-            .navigationBarTitleDisplayMode(.large)
+            Button("Cancel", role: .cancel) { }
+        }
+        .onAppear {
+            Task { await loadSafely() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .signInGoogleCompleted)) { _ in
+            Task { await loadSafely() }
+        }
+        .alert(item: $authError) { error in
+            Alert(
+                title: Text(error.title),
+                message: Text(error.localizedDescription),
+                dismissButton: .default(Text("OK"))
+            )
+        }
+    }
+
+    // MARK: - Placeholders
+    private var diagnosisPlaceholder: some View {
+        RoundedRectangle(cornerRadius: 22)
+            .fill(AppTheme.accent.opacity(0.06))
+            .frame(height: 140)
+            .overlay(ProgressView())
+            .overlay(
+                RoundedRectangle(cornerRadius: 22)
+                    .stroke(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
+            )
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+            Text("Loading your videos…")
+                .font(.subheadline)
+                .foregroundColor(AppTheme.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 40)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "video.slash")
+                .font(.system(size: 36))
+                .foregroundColor(AppTheme.textTertiary)
+            Text("No videos found")
+                .font(.headline)
+                .foregroundColor(AppTheme.textSecondary)
+            Text("Videos from your channel will appear here once loaded.")
+                .font(.subheadline)
+                .foregroundColor(AppTheme.textTertiary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 60)
+    }
+
+    private func loadSafely() async {
+        guard vm.videos.isEmpty else { return }
+        do {
+            _ = try await AuthManager.shared.getValidToken()
+            await vm.loadVideos()
+        } catch {
+            authError = .sessionExpired
         }
     }
 }
 
-struct CoachView_Previews: PreviewProvider {
-    static var previews: some View {
-        CoachView()
+// MARK: - ImprovedDiagnosisCard
+struct ImprovedDiagnosisCard: View {
+    let diagnosis: ChannelDiagnosis
+    let report: ChannelIntelligenceReport?
+
+    private var bullets: [String] {
+        // Split the body into scannable bullet points
+        // We derive bullets from the diagnosis body text
+        let body = diagnosis.body
+        // Split on common sentence endings for bullet points
+        let sentences = body.components(separatedBy: ". ")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return Array(sentences.prefix(3))
+    }
+
+    private var healthChips: [(label: String, color: Color)] {
+        guard let report = report else { return [] }
+        var chips: [(String, Color)] = []
+
+        let gqs = report.growthQualityScore
+
+        // Retention chip
+        if gqs.retentionStrength >= 0.40 {
+            chips.append(("Retention ✓", .green))
+        } else if gqs.retentionStrength >= 0.25 {
+            chips.append(("Retention low", .yellow))
+        } else {
+            chips.append(("Retention ✗", .red))
+        }
+
+        // CTR chip
+        let avgCTR = report.channelAvgCTR
+        if avgCTR >= 0.06 {
+            chips.append(("CTR ✓", .green))
+        } else if avgCTR >= 0.04 {
+            chips.append(("CTR low", .yellow))
+        } else {
+            chips.append(("CTR needs work", .red))
+        }
+
+        // Growth chip
+        if gqs.composite >= 7.0 {
+            chips.append(("Growth strong", .green))
+        } else if gqs.composite >= 5.0 {
+            chips.append(("Growth moderate", .yellow))
+        } else {
+            chips.append(("Growth low", .red))
+        }
+
+        return chips
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+
+            // Label
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(AppTheme.accent)
+                    .frame(width: 5, height: 5)
+                Text("Channel diagnosis")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(AppTheme.accent)
+                    .kerning(1.0)
+                    .textCase(.uppercase)
+            }
+
+            // Headline
+            Text(diagnosis.headline)
+                .font(.system(size: 17, weight: .medium, design: .serif))
+                .foregroundColor(AppTheme.textPrimary)
+                .lineSpacing(3)
+
+            // Bullet points
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(bullets, id: \.self) { bullet in
+                    HStack(alignment: .top, spacing: 7) {
+                        Circle()
+                            .fill(AppTheme.accent.opacity(0.5))
+                            .frame(width: 4, height: 4)
+                            .padding(.top, 5)
+                        Text(bullet + (bullet.hasSuffix(".") ? "" : "."))
+                            .font(.system(size: 12))
+                            .foregroundColor(AppTheme.textSecondary)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
+            // Health chips
+            if !healthChips.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(healthChips, id: \.label) { chip in
+                            Text(chip.label)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(chip.color)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 4)
+                                .background(chip.color.opacity(0.1))
+                                .cornerRadius(10)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .background(AppTheme.accent.opacity(0.06))
+        .cornerRadius(22)
+        .overlay(
+            RoundedRectangle(cornerRadius: 22)
+                .stroke(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
+        )
+    }
+}
+
+// MARK: - CoachVideoCardWithReplication (kept for backward compat)
+struct CoachVideoCardWithReplication: View {
+    let video: Video
+    let report: ChannelIntelligenceReport?
+
+    var body: some View {
+        CoachVideoCard(
+            video: video,
+            replicationScore: report?.replicationScore(for: video)
+        )
+    }
+}
+
+// MARK: - DiagnosisCard (kept for backward compat)
+struct DiagnosisCard: View {
+    let diagnosis: ChannelDiagnosis
+
+    var body: some View {
+        ImprovedDiagnosisCard(diagnosis: diagnosis, report: nil)
     }
 }

@@ -1,8 +1,6 @@
-//
-//  Notification+Names.swift
-//  SubsAI
-//
-//  Created by Work Laptop on 24/01/2026.
-//
-
 import Foundation
+
+extension Notification.Name {
+    static let signInGoogleCompleted = Notification.Name("signInGoogleCompleted")
+    static let youtubeAccessRevoked   = Notification.Name("youtubeAccessRevoked")
+}

@@ -1,39 +1,60 @@
+// Features/Dashboard/Components/StatCard.swift
 import SwiftUI
 
 struct StatCard: View {
     let title: String
     let value: String
+    let delta: String?
     let iconName: String
     let color: Color
 
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: iconName)
-                .font(.title2)
-                .foregroundColor(color)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text(value)
-                    .font(.headline)
-                    .bold()
-                    .foregroundColor(color)
-            }
-            Spacer()
-        }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+    init(
+        title: String,
+        value: String,
+        delta: String? = nil,
+        iconName: String,
+        color: Color
+    ) {
+        self.title = title
+        self.value = value
+        self.delta = delta
+        self.iconName = iconName
+        self.color = color
     }
-}
 
-struct StatCard_Previews: PreviewProvider {
-    static var previews: some View {
-        StatCard(title: "Subscribers", value: "1.2K", iconName: "person.fill", color: .blue)
-            .padding()
-            .previewLayout(.sizeThatFits)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: iconName)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(color)
+                Text(title.uppercased())
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(AppTheme.textSecondary)
+                    .kerning(0.6)
+            }
+
+            Text(value)
+                .font(.system(size: 22, weight: .medium, design: .rounded))
+                .foregroundColor(AppTheme.textPrimary)
+
+            if let delta = delta {
+                Text(delta)
+                    .font(.system(size: 11))
+                    .foregroundColor(color.opacity(0.9))
+            } else {
+                // Invisible placeholder to keep card height consistent
+                Text(" ")
+                    .font(.system(size: 11))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(AppTheme.cardBackground)
+        .cornerRadius(18)
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(AppTheme.borderSubtle, lineWidth: 0.5)
+        )
     }
 }

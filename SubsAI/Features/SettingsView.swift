@@ -77,5 +77,4 @@ struct SettingsView: View {
 }
 
 extension Notification.Name {
-    static let youtubeAccessRevoked = Notification.Name("youtubeAccessRevoked")
 }

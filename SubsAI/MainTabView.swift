@@ -1,53 +1,39 @@
-// MainTabView.swift
 import SwiftUI
 
 struct MainTabView: View {
+
+    @StateObject private var coachVM = CoachViewModel()
+
     var body: some View {
         TabView {
-
-            // MARK: - Home / Channel Overview
             DashboardView()
                 .tabItem {
                     Label("Home", systemImage: "house.fill")
                 }
 
-            // MARK: - Coach (Video Performance Guidance)
-            CoachView()
+            IntelligenceView(vm: coachVM)
                 .tabItem {
-                    Label("Coach", systemImage: "brain.head.profile")
+                    Label("Intelligence", systemImage: "brain.head.profile")
                 }
 
-            // MARK: - Video Analytics
-            VideoAnalyticsView()
+            CoachView(vm: coachVM)
                 .tabItem {
-                    Label("Analytics", systemImage: "chart.bar.fill")
+                    Label("Coach", systemImage: "figure.mind.and.body")
                 }
 
-            // MARK: - Settings
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gear")
                 }
         }
-        .tint(.blue)
+        .tint(AppTheme.accent)
         .onAppear {
-            configureTabBarAppearance()
+            let appearance = UITabBarAppearance()
+            appearance.configureWithOpaqueBackground()
+            // ✅ UIColor not Color
+            appearance.backgroundColor = UIColor.systemBackground
+            UITabBar.appearance().standardAppearance = appearance
+            UITabBar.appearance().scrollEdgeAppearance = appearance
         }
-    }
-
-    // MARK: - Tab Bar Styling
-    private func configureTabBarAppearance() {
-        let appearance = UITabBarAppearance()
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = UIColor.systemBackground
-
-        UITabBar.appearance().standardAppearance = appearance
-        UITabBar.appearance().scrollEdgeAppearance = appearance
-    }
-}
-
-struct MainTabView_Previews: PreviewProvider {
-    static var previews: some View {
-        MainTabView()
     }
 }

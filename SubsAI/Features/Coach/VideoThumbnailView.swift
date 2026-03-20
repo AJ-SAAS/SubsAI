@@ -4,30 +4,37 @@ struct VideoThumbnailView: View {
     let video: Video
 
     var body: some View {
-        if let urlString = video.thumbnailURL,
-           let url = URL(string: urlString) {
-            AsyncImage(url: url) { image in
-                image
-                    .resizable()
-                    .scaledToFill()
-            } placeholder: {
-                Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-                    .overlay(
-                        Image(systemName: "play.fill")
-                            .font(.largeTitle)
-                            .foregroundColor(.white)
-                    )
+        if let url = video.thumbnailURL {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                        .frame(height: 180)
+                        .clipped()
+                        .cornerRadius(12)
+                default:
+                    placeholder
+                        .frame(height: 180)
+                        .cornerRadius(12)
+                }
             }
         } else {
-            Rectangle()
-                .fill(Color.gray.opacity(0.3))
-                .overlay(
-                    Image(systemName: "play.fill")
-                        .font(.largeTitle)
-                        .foregroundColor(.white)
-                )
+            placeholder
+                .frame(height: 180)
+                .cornerRadius(12)
         }
+    }
+
+    private var placeholder: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.3))
+            .overlay(
+                Image(systemName: "play.fill")
+                    .font(.largeTitle)
+                    .foregroundColor(.white)
+            )
     }
 }
 
@@ -35,33 +42,32 @@ struct VideoThumbnailMini: View {
     let video: Video
 
     var body: some View {
-        if let urlString = video.thumbnailURL,
-           let url = URL(string: urlString) {
-            AsyncImage(url: url) { image in
-                image
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 80, height: 45)
-                    .clipped()
-            } placeholder: {
-                Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(width: 80, height: 45)
-                    .overlay(
-                        Image(systemName: "play.fill")
-                            .font(.caption)
-                            .foregroundColor(.white)
-                    )
+        if let url = video.thumbnailURL {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 80, height: 45)
+                        .clipped()
+                default:
+                    miniPlaceholder
+                }
             }
         } else {
-            Rectangle()
-                .fill(Color.gray.opacity(0.3))
-                .frame(width: 80, height: 45)
-                .overlay(
-                    Image(systemName: "play.fill")
-                        .font(.caption)
-                        .foregroundColor(.white)
-                )
+            miniPlaceholder
         }
+    }
+
+    private var miniPlaceholder: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.3))
+            .frame(width: 80, height: 45)
+            .overlay(
+                Image(systemName: "play.fill")
+                    .font(.caption)
+                    .foregroundColor(.white)
+            )
     }
 }

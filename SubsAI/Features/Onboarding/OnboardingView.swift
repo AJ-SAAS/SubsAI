@@ -4,85 +4,123 @@ import GoogleSignIn
 import GoogleSignInSwift
 
 struct OnboardingView: View {
-    @StateObject private var viewModel = OnboardingViewModel()
     @State private var isSigningIn = false
+    @State private var errorMessage: String?
 
     var body: some View {
         VStack(spacing: 40) {
             Spacer()
 
+            // App Logo
             Image(systemName: "play.rectangle.fill")
                 .font(.system(size: 100))
                 .foregroundColor(.red)
+                .symbolEffect(.pulse, options: .repeating)
 
+            // App Name
             Text("SubsAI")
                 .font(.largeTitle)
                 .fontWeight(.bold)
 
-            Text("Sign in with your YouTube channel to see real-time stats & analytics")
+            // Description
+            Text("Sign in with your YouTube channel to track real-time stats, get coaching insights, and grow faster.")
+                .font(.subheadline)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 32)
 
-            if viewModel.isLoading || isSigningIn {
-                ProgressView("Signing in…")
-                    .progressViewStyle(.circular)
+            Spacer()
+
+            // Sign-in area
+            if isSigningIn {
+                ProgressView("Connecting to YouTube…")
+                    .progressViewStyle(CircularProgressViewStyle(tint: .red))
+                    .scaleEffect(1.2)
             } else {
-                GoogleSignInButton(scheme: .dark, style: .wide, state: .normal) {
+                GoogleSignInButton(
+                    scheme: .dark,
+                    style: .wide,
+                    state: .normal
+                ) {
                     Task { await signInWithGoogle() }
                 }
-                .frame(height: 50)
+                .frame(height: 52)
                 .padding(.horizontal, 40)
+                .disabled(isSigningIn)
+                .opacity(isSigningIn ? 0.6 : 1.0)
             }
 
-            if let error = viewModel.errorMessage {
-                Text("Error: \(error)")
+            // Error display
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.footnote)
                     .foregroundColor(.red)
                     .multilineTextAlignment(.center)
-                    .padding()
+                    .padding(.horizontal, 32)
+                    .padding(.top, 8)
             }
 
             Spacer()
         }
         .padding()
+        .background(Color(.systemBackground))
     }
 
+    // MARK: - Google Sign-In Flow
     private func signInWithGoogle() async {
         isSigningIn = true
-        viewModel.errorMessage = nil
+        errorMessage = nil
 
-        // Get presenting view controller
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let rootViewController = windowScene.windows.first?.rootViewController else {
-            viewModel.errorMessage = "Unable to present sign-in screen"
+        guard
+            let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+            let rootVC = windowScene.windows.first?.rootViewController
+        else {
+            errorMessage = "Cannot present sign-in screen. Please restart the app."
             isSigningIn = false
             return
         }
 
-        // Required scopes for YouTube Data API + Analytics API
-        let requiredScopes = [
+        let scopes = [
             "https://www.googleapis.com/auth/youtube.readonly",
             "https://www.googleapis.com/auth/yt-analytics.readonly"
         ]
 
         do {
-            let signInResult = try await GIDSignIn.sharedInstance.signIn(
-                withPresenting: rootViewController,
+            let result = try await GIDSignIn.sharedInstance.signIn(
+                withPresenting: rootVC,
                 hint: nil,
-                additionalScopes: requiredScopes
+                additionalScopes: scopes
             )
 
-            let user = signInResult.user
-            let accessToken = user.accessToken.tokenString  // ← This is non-optional String
+            // Success → update shared auth manager
+            AuthManager.shared.handleSuccessfulSignIn(user: result.user)
+            print("✅ Google Sign-In successful | User: \(result.user.profile?.email ?? "unknown")")
 
-            // Success
-            AuthManager.shared.signIn(accessToken: accessToken)
-            print("Signed in successfully! Access token acquired.")
+            // Optional haptic feedback
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+        } catch let error as GIDSignInError {
+            // Modern GIDSignInError handling (GSI 7+)
+            switch error.code {
+            case .canceled:
+                errorMessage = nil  // User canceled → no message
+            case .hasNoAuthInKeychain:
+                errorMessage = "No previous sign-in found. Please try again."
+            default:
+                errorMessage = "Sign-in failed: \(error.localizedDescription)"
+            }
+            print("❌ Google Sign-In error (\(error.code.rawValue)): \(error.localizedDescription)")
 
         } catch {
-            print("Sign-in failed: \(error.localizedDescription)")
-            viewModel.errorMessage = error.localizedDescription
+            errorMessage = "An unexpected error occurred. Please try again."
+            print("❌ Unexpected sign-in error: \(error)")
         }
 
         isSigningIn = false
     }
+}
+
+// MARK: - Preview
+#Preview {
+    OnboardingView()
 }
