@@ -7,19 +7,22 @@ struct StatCard: View {
     let delta: String?
     let iconName: String
     let color: Color
+    var percentage: String? = nil  // ← add this
 
     init(
         title: String,
         value: String,
         delta: String? = nil,
         iconName: String,
-        color: Color
+        color: Color,
+        percentage: String? = nil  // ← add this
     ) {
         self.title = title
         self.value = value
         self.delta = delta
         self.iconName = iconName
         self.color = color
+        self.percentage = percentage
     }
 
     var body: some View {
@@ -39,11 +42,17 @@ struct StatCard: View {
                 .foregroundColor(AppTheme.textPrimary)
 
             if let delta = delta {
-                Text(delta)
-                    .font(.system(size: 11))
-                    .foregroundColor(color.opacity(0.9))
+                HStack(spacing: 4) {
+                    Text(delta)
+                        .font(.system(size: 11))
+                        .foregroundColor(color.opacity(0.9))
+                    if let pct = percentage {
+                        Text("(\(pct))")
+                            .font(.system(size: 10))
+                            .foregroundColor(AppTheme.textTertiary)
+                    }
+                }
             } else {
-                // Invisible placeholder to keep card height consistent
                 Text(" ")
                     .font(.system(size: 11))
             }

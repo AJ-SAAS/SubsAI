@@ -43,6 +43,46 @@ struct AnalyticsReportResponse: Codable {
     let rows: [[AnalyticsValue]]?
 }
 
+// MARK: - Posting Time Insight
+struct PostingTimeInsight {
+    let bestDay: String
+    let bestDayAvgViews: Int
+    let worstDay: String
+    let worstDayAvgViews: Int
+    let sampleSize: Int
+    let isReliable: Bool
+
+    // True if current video was posted on a suboptimal day
+    func isSuboptimal(for video: Video) -> Bool {
+        guard isReliable else { return false }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE"
+        let day = formatter.string(from: video.publishedAt)
+        return day == worstDay
+    }
+
+    // Human-readable line for briefing card
+    var briefingLine: String {
+        let reliability = isReliable ? "" : " (early signal — more uploads will sharpen this)"
+        return "Your \(bestDay) uploads average \(formatViews(bestDayAvgViews)) views vs \(formatViews(worstDayAvgViews)) on \(worstDay). Post your next video on \(bestDay)\(reliability)."
+    }
+
+    // Human-readable line for video review
+    func reviewLine(for video: Video) -> String? {
+        guard isSuboptimal(for: video) else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE"
+        let day = formatter.string(from: video.publishedAt)
+        return "Posted on \(day) — outside your best window (\(bestDay)). Early distribution may have been affected."
+    }
+
+    private func formatViews(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 1_000     { return String(format: "%.1fK", Double(n) / 1_000) }
+        return "\(n)"
+    }
+}
+
 // MARK: - Channel Diagnosis
 struct ChannelDiagnosis {
     let headline: String
@@ -120,6 +160,7 @@ final class CoachViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var diagnosis: ChannelDiagnosis?
     @Published var intelligenceReport: ChannelIntelligenceReport?
+    @Published var postingTimeInsight: PostingTimeInsight?
 
     init() {
         Task { await loadVideos() }
@@ -143,8 +184,9 @@ final class CoachViewModel: ObservableObject {
 
             await enrichWithAnalytics(accessToken: token)
 
-            self.diagnosis          = ChannelDiagnosis.generate(from: self.videos)
-            self.intelligenceReport = ChannelIntelligenceReport.generate(from: self.videos)
+            self.diagnosis           = ChannelDiagnosis.generate(from: self.videos)
+            self.intelligenceReport  = ChannelIntelligenceReport.generate(from: self.videos)
+            self.postingTimeInsight  = analyzePostingTimes()
 
             print("✅ Loaded \(videos.count) videos")
 
@@ -157,6 +199,49 @@ final class CoachViewModel: ObservableObject {
         videos.sorted { a, b in
             a.verdict.severity > b.verdict.severity
         }
+    }
+
+    // MARK: - Posting Time Analysis
+    func analyzePostingTimes() -> PostingTimeInsight? {
+        let videosWithViews = videos.filter { $0.views > 0 }
+        guard videosWithViews.count >= 4 else { return nil }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE"
+
+        // Group view counts by day of week
+        var dayGroups: [String: [Int]] = [:]
+        for video in videosWithViews {
+            let day = formatter.string(from: video.publishedAt)
+            dayGroups[day, default: []].append(video.views)
+        }
+
+        // Need at least 2 different days to compare
+        guard dayGroups.count >= 2 else { return nil }
+
+        // Average views per day
+        let dayAverages = dayGroups.mapValues { views -> Int in
+            views.reduce(0, +) / views.count
+        }
+
+        guard
+            let best  = dayAverages.max(by: { $0.value < $1.value }),
+            let worst = dayAverages.min(by: { $0.value < $1.value }),
+            best.key != worst.key
+        else { return nil }
+
+        // Only surface if there's a meaningful gap (at least 20% difference)
+        let gap = Double(best.value - worst.value) / Double(max(best.value, 1))
+        guard gap >= 0.20 else { return nil }
+
+        return PostingTimeInsight(
+            bestDay: best.key,
+            bestDayAvgViews: best.value,
+            worstDay: worst.key,
+            worstDayAvgViews: worst.value,
+            sampleSize: videosWithViews.count,
+            isReliable: videosWithViews.count >= 8
+        )
     }
 
     // MARK: - Uploads Playlist ID
@@ -237,7 +322,6 @@ final class CoachViewModel: ObservableObject {
             )!
             components.queryItems = [
                 .init(name: "ids",     value: "channel==MINE"),
-                // ✅ Added subscribersGained as 5th metric
                 .init(name: "metrics", value: "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,subscribersGained"),
                 .init(name: "filters", value: "video==\(videoId)"),
                 .init(name: "startDate", value: startDate),
@@ -249,13 +333,11 @@ final class CoachViewModel: ObservableObject {
                 let (data, _) = try await URLSession.shared.data(for: request)
                 let report = try JSONDecoder().decode(AnalyticsReportResponse.self, from: data)
 
-                // ✅ Now expects 5 columns minimum
                 guard let row = report.rows?.first, row.count >= 4 else { continue }
 
                 let views       = row[0].intValue
                 let avgDuration = row[2].intValue
                 let retention   = row[3].doubleValue / 100.0
-                // ✅ subscribersGained — safe fallback if column missing
                 let subsGained  = row.count >= 5 ? row[4].intValue : 0
 
                 videos[index].views               = views

@@ -40,12 +40,22 @@ struct DashboardView: View {
                             channelHeader(channel)
                         }
 
-                        // 2 — Focus card (new)
+                        // 2 — Focus card
                         if let channel = vm.channelInfo {
-                            focusCard(channel)
+                            let focus = channelFocus(channel)
+                            if focus.linksToCoach {
+                                NavigationLink {
+                                    CoachView(vm: CoachViewModel())
+                                } label: {
+                                    focusCard(channel)
+                                }
+                                .buttonStyle(.plain)
+                            } else {
+                                focusCard(channel)
+                            }
                         }
 
-                        // 3 — Latest video (moved up)
+                        // 3 — Latest video
                         latestVideoSection()
 
                         // 4 — Period selector
@@ -150,7 +160,7 @@ struct DashboardView: View {
         .padding(.top, 8)
     }
 
-    // MARK: - Focus card (new)
+    // MARK: - Focus card
     private func focusCard(_ channel: Channel) -> some View {
         let focus = channelFocus(channel)
 
@@ -164,6 +174,19 @@ struct DashboardView: View {
                     .foregroundColor(focus.color)
                     .kerning(1.0)
                     .textCase(.uppercase)
+
+                Spacer()
+
+                if focus.linksToCoach {
+                    HStack(spacing: 3) {
+                        Text("See Coach")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(focus.color)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 10))
+                            .foregroundColor(focus.color)
+                    }
+                }
             }
 
             Text(focus.title)
@@ -193,16 +216,14 @@ struct DashboardView: View {
         let title: String
         let body: String
         let color: Color
+        var linksToCoach: Bool = false
     }
 
     private func channelFocus(_ channel: Channel) -> ChannelFocus {
-        // Use viewGrowth as a proxy for avg CTR signal
-        // Primary signals: subscriber growth, view growth, watch time
-        let netSubs = vm.subscriberGrowth?.absolute ?? 0
-        let views   = vm.viewGrowth?.absolute ?? 0
+        let netSubs    = vm.subscriberGrowth?.absolute ?? 0
+        let views      = vm.viewGrowth?.absolute ?? 0
         let watchHours = channel.watchTime
 
-        // No data yet
         if views == 0 && watchHours == 0 {
             return ChannelFocus(
                 title: "Start by uploading consistently.",
@@ -211,17 +232,15 @@ struct DashboardView: View {
             )
         }
 
-        // Losing subscribers
         if netSubs < -2 {
             return ChannelFocus(
                 title: "You're losing more subscribers than you're gaining.",
                 body: "This usually means your recent videos aren't matching what your audience subscribed for. Look at your last 3 videos on the Coach page — check what changed.",
-                color: .red
+                color: .red,
+                linksToCoach: true
             )
         }
 
-        // Views low relative to watch hours — good retention, low reach
-        // This suggests a CTR / discovery issue
         if watchHours > 0 && views < 500 {
             return ChannelFocus(
                 title: "Your content is being watched — but not enough people are clicking.",
@@ -230,16 +249,15 @@ struct DashboardView: View {
             )
         }
 
-        // Flat or minimal growth
         if netSubs == 0 && views < 1000 {
             return ChannelFocus(
                 title: "Growth has stalled this period.",
                 body: "Views and subscriber gains are both low. Check the Coach page — it'll tell you which of your videos has the best chance of turning this around.",
-                color: .yellow
+                color: .yellow,
+                linksToCoach: true
             )
         }
 
-        // Positive growth
         if netSubs > 0 && views > 0 {
             return ChannelFocus(
                 title: "Your channel is growing. Keep the momentum.",
@@ -248,7 +266,6 @@ struct DashboardView: View {
             )
         }
 
-        // Default
         return ChannelFocus(
             title: "Check your latest video performance.",
             body: "Tap the video below to see how it's doing and what to improve for your next upload.",
@@ -302,7 +319,8 @@ struct DashboardView: View {
                     "+\($0.absolute.formatted()) \(vm.selectedPeriod.label)"
                 },
                 iconName: "eye.fill",
-                color: AppTheme.accent
+                color: AppTheme.accent,
+                percentage: vm.viewGrowth?.formattedPercentage
             )
 
             StatCard(
@@ -316,7 +334,10 @@ struct DashboardView: View {
                         : "No data this period"
                 },
                 iconName: "clock.fill",
-                color: .cyan
+                color: .cyan,
+                percentage: vm.watchTimeGrowth.flatMap { growth in
+                    growth.absolute > 0 ? growth.formattedPercentage : nil
+                }
             )
 
             StatCard(
@@ -335,7 +356,8 @@ struct DashboardView: View {
                     return "\(prefix)\(growth.absolute.formatted()) \(vm.selectedPeriod.label)"
                 },
                 iconName: "person.2.fill",
-                color: AppTheme.success
+                color: AppTheme.success,
+                percentage: vm.subscriberGrowth?.formattedPercentage
             )
         }
     }

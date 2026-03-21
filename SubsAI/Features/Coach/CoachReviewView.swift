@@ -4,6 +4,7 @@ import SwiftUI
 struct CoachReviewView: View {
     let video: Video
     var allVideos: [Video] = []
+    var postingTimeInsight: PostingTimeInsight? = nil
 
     private var verdict: CoachVerdict { video.verdict }
     private var fix: CoachFix { video.primaryFix }
@@ -21,6 +22,78 @@ struct CoachReviewView: View {
         if gpv >= 1.0 { return .yellow }
         if gpv > 0    { return .red }
         return AppTheme.textTertiary
+    }
+
+    // MARK: - Pattern detection across all videos
+    private var isPatternAcrossChannel: Bool {
+        guard allVideos.count >= 3 else { return false }
+        let videosWithData = allVideos.filter { $0.analytics != nil }
+        guard videosWithData.count >= 3 else { return false }
+
+        switch fix {
+        case .thumbnail:
+            let lowCTR = videosWithData.filter { ($0.analytics?.ctr ?? 0) < 0.05 }
+            return Double(lowCTR.count) / Double(videosWithData.count) >= 0.6
+        case .hook:
+            let lowRetention = videosWithData.filter { ($0.analytics?.retention ?? 0) < 0.30 }
+            return Double(lowRetention.count) / Double(videosWithData.count) >= 0.6
+        case .retention:
+            let midDrop = videosWithData.filter { ($0.analytics?.retention ?? 0) < 0.35 }
+            return Double(midDrop.count) / Double(videosWithData.count) >= 0.6
+        case .discovery:
+            let belowExpected = videosWithData.filter {
+                $0.views < ($0.analytics?.expectedViews ?? 0)
+            }
+            return Double(belowExpected.count) / Double(videosWithData.count) >= 0.6
+        case .none:
+            return false
+        }
+    }
+
+    private var patternText: String {
+        let videosWithData = allVideos.filter { $0.analytics != nil }
+        let total = videosWithData.count
+
+        switch fix {
+        case .thumbnail:
+            let count = videosWithData.filter { ($0.analytics?.ctr ?? 0) < 0.05 }.count
+            return "\(count) of your last \(total) videos have CTR below 5%. This is a channel-wide pattern, not just this video — your thumbnail strategy needs a systematic rethink."
+        case .hook:
+            let count = videosWithData.filter { ($0.analytics?.retention ?? 0) < 0.30 }.count
+            return "\(count) of your last \(total) videos have retention below 30%. Your hook is consistently losing people — this is the single highest-leverage thing to fix across your whole channel."
+        case .retention:
+            let count = videosWithData.filter { ($0.analytics?.retention ?? 0) < 0.35 }.count
+            return "\(count) of your last \(total) videos drop below 35% retention. Mid-video pacing is a channel pattern — add a re-hook every 3–4 minutes across all your upcoming videos."
+        case .discovery:
+            let count = videosWithData.filter {
+                $0.views < ($0.analytics?.expectedViews ?? 0)
+            }.count
+            return "\(count) of your last \(total) videos are underperforming on views despite decent CTR. This suggests a metadata pattern — your titles and descriptions may not be helping YouTube surface your content."
+        case .none:
+            return ""
+        }
+    }
+
+    private var isolatedText: String {
+        switch fix {
+        case .thumbnail:
+            return "This is isolated to this video — your other videos have decent CTR. Something specific about this thumbnail or title isn't landing."
+        case .hook:
+            return "This is isolated to this video — your other videos hold retention better. Something specific about how this one starts isn't working."
+        case .retention:
+            return "This is isolated to this video — your retention is generally solid. There may be a specific section in this video where pacing dropped."
+        case .discovery:
+            return "This is isolated to this video — your other videos are getting expected views. Something specific about this video's metadata may be holding it back."
+        case .none:
+            return ""
+        }
+    }
+
+    // MARK: - Posting day label
+    private var publishedDayLabel: String {
+        let f = DateFormatter()
+        f.dateFormat = "EEE"
+        return f.string(from: video.publishedAt)
     }
 
     var body: some View {
@@ -59,6 +132,11 @@ struct CoachReviewView: View {
                     // MARK: - What's working
                     workingWellCard
 
+                    // MARK: - Is this a pattern?
+                    if fix != .none {
+                        patternStrip
+                    }
+
                     // MARK: - Deep Analyze button
                     NavigationLink {
                         VideoDeepAnalysisView(video: video, allVideos: allVideos)
@@ -95,6 +173,55 @@ struct CoachReviewView: View {
         }
         .navigationTitle("Video Review")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Pattern strip
+    private var patternStrip: some View {
+        let isPattern = isPatternAcrossChannel
+        let color: Color = isPattern ? .orange : AppTheme.accent
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: isPattern ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundColor(color)
+                Text(isPattern ? "Channel pattern" : "Isolated to this video")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(color)
+                    .kerning(1.0)
+                    .textCase(.uppercase)
+            }
+
+            Text(isPattern ? patternText : isolatedText)
+                .font(.system(size: 12))
+                .foregroundColor(AppTheme.textSecondary)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if isPattern {
+                NavigationLink {
+                    IntelligenceView(vm: CoachViewModel())
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("See full channel analysis in Intelligence")
+                            .font(.system(size: 12))
+                            .foregroundColor(color)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 11))
+                            .foregroundColor(color)
+                    }
+                }
+                .padding(.top, 2)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(color.opacity(0.06))
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(color.opacity(0.2), lineWidth: 0.5)
+        )
     }
 
     // MARK: - Thumbnail
@@ -215,7 +342,10 @@ struct CoachReviewView: View {
 
     // MARK: - Metrics card
     private var metricsCard: some View {
-        VStack(spacing: 0) {
+        let postingTimeLine = postingTimeInsight?.reviewLine(for: video)
+        let hasPostingTimeRow = postingTimeLine != nil
+
+        return VStack(spacing: 0) {
             if let stats = video.analytics {
                 ReviewMetricRow(
                     name: "Click-through rate",
@@ -248,10 +378,9 @@ struct CoachReviewView: View {
                         expected: stats.expectedViews,
                         ctr: stats.ctr
                     ),
-                    isLast: stats.subscribersGained == 0
+                    isLast: stats.subscribersGained == 0 && !hasPostingTimeRow
                 )
 
-                // ✅ Subs gained row — only shown if we have the data
                 if stats.subscribersGained > 0 {
                     ReviewMetricRow(
                         name: "Subscribers gained",
@@ -265,9 +394,23 @@ struct CoachReviewView: View {
                             stats.subscribersGained,
                             gpv: video.growthPerView
                         ),
+                        isLast: !hasPostingTimeRow
+                    )
+                }
+
+                // Posting time row — only shown if video was posted on a suboptimal day
+                if let line = postingTimeLine {
+                    ReviewMetricRow(
+                        name: "Posting time",
+                        value: publishedDayLabel,
+                        benchmark: "Not your best day",
+                        progress: 0.3,
+                        isGood: false,
+                        explanation: line,
                         isLast: true
                     )
                 }
+
             } else {
                 Text("Analytics loading…")
                     .font(.system(size: 13))

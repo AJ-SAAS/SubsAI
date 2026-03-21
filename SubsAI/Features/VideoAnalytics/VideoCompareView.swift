@@ -1,73 +1,155 @@
 // Features/VideoAnalytics/VideoCompareView.swift
 import SwiftUI
 
+// MARK: - Channel pattern engine
+private struct ChannelPattern {
+    let topPattern: String
+    let bottomPattern: String
+    let studyVideo: Video
+    let studyReason: String
+}
+
+private func analyzePatterns(current: Video, all: [Video]) -> ChannelPattern? {
+    let videosWithData = all.filter { $0.analytics != nil }
+    guard videosWithData.count >= 3 else { return nil }
+
+    let sorted = videosWithData.sorted {
+        ($0.analytics?.retention ?? 0) > ($1.analytics?.retention ?? 0)
+    }
+
+    let topCount  = max(1, sorted.count / 3)
+    let topVideos = Array(sorted.prefix(topCount))
+    let botVideos = Array(sorted.suffix(topCount))
+
+    // MARK: Title pattern detection
+    func hasQuestion(_ title: String) -> Bool {
+        title.contains("?")
+    }
+    func hasNumber(_ title: String) -> Bool {
+        title.range(of: #"\d"#, options: .regularExpression) != nil
+    }
+    func hasHowTo(_ title: String) -> Bool {
+        let lower = title.lowercased()
+        return lower.hasPrefix("how") || lower.hasPrefix("why") || lower.hasPrefix("what")
+    }
+    func hasHowI(_ title: String) -> Bool {
+        let lower = title.lowercased()
+        return lower.hasPrefix("how i") || lower.hasPrefix("i tried") || lower.hasPrefix("i built") || lower.hasPrefix("i made")
+    }
+    func isShortTitle(_ title: String) -> Bool {
+        title.count < 50
+    }
+
+    // Score top vs bottom title patterns
+    let topQuestions  = topVideos.filter { hasQuestion($0.title) }.count
+    let topNumbers    = topVideos.filter { hasNumber($0.title) }.count
+    let topHowTo      = topVideos.filter { hasHowTo($0.title) }.count
+    let topHowI       = topVideos.filter { hasHowI($0.title) }.count
+    let topShort      = topVideos.filter { isShortTitle($0.title) }.count
+
+    let botQuestions  = botVideos.filter { hasQuestion($0.title) }.count
+    let botNumbers    = botVideos.filter { hasNumber($0.title) }.count
+    let botHowTo      = botVideos.filter { hasHowTo($0.title) }.count
+    let botHowI       = botVideos.filter { hasHowI($0.title) }.count
+    let botShort      = botVideos.filter { isShortTitle($0.title) }.count
+
+    // Derive top pattern sentence
+    var topPattern = ""
+    if topQuestions > botQuestions && topQuestions >= topCount / 2 {
+        topPattern = "Your best-retained videos tend to have questions in the title — they create curiosity before the viewer even clicks."
+    } else if topNumbers > botNumbers && topNumbers >= topCount / 2 {
+        topPattern = "Your best-retained videos tend to have numbers in the title — specific, concrete promises outperform vague ones on your channel."
+    } else if topHowTo > botHowTo && topHowTo >= topCount / 2 {
+        topPattern = "Your best-retained videos lead with \"How\" or \"Why\" in the title — your audience responds to direct, instructional framing."
+    } else if topShort > botShort {
+        topPattern = "Your best-retained videos have shorter, more direct titles — under 50 characters tends to outperform on your channel."
+    } else {
+        let avgTopRetention = topVideos.compactMap { $0.analytics?.retention }.reduce(0, +) / Double(topVideos.count)
+        topPattern = "Your top \(topVideos.count) videos average \(Int(avgTopRetention * 100))% retention. Study their opening 30 seconds — that's where the pattern lives."
+    }
+
+    // Derive bottom pattern sentence
+    var bottomPattern = ""
+    if botHowI > topHowI && botHowI >= botCount(botVideos) / 2 {
+        bottomPattern = "Your weakest videos tend to start with \"How I\" or \"I tried\" — first-person process titles underperform on your channel compared to outcome-focused ones."
+    } else if botNumbers > topNumbers {
+        bottomPattern = "Your lower-performing videos use fewer numbers in titles — your audience may respond better to specific, quantified promises."
+    } else if !botVideos.isEmpty {
+        let avgBotRetention = botVideos.compactMap { $0.analytics?.retention }.reduce(0, +) / Double(botVideos.count)
+        bottomPattern = "Your bottom \(botVideos.count) videos average \(Int(avgBotRetention * 100))% retention — significantly below your channel average."
+    }
+
+    // MARK: Study video — highest performer most unlike current
+    let avgRetention = videosWithData.compactMap { $0.analytics?.retention }.reduce(0, +) / Double(videosWithData.count)
+
+    let studyVideo = sorted.first(where: { $0.id != current.id }) ?? sorted[0]
+    let studyRetention = Int((studyVideo.analytics?.retention ?? 0) * 100)
+    let studyReason = "\(studyRetention)% retention vs your \(Int(avgRetention * 100))% channel average — the biggest gap in your library"
+
+    return ChannelPattern(
+        topPattern: topPattern,
+        bottomPattern: bottomPattern,
+        studyVideo: studyVideo,
+        studyReason: studyReason
+    )
+}
+
+private func botCount(_ videos: [Video]) -> Int {
+    max(videos.count, 1)
+}
+
+// MARK: - VideoCompareView
 struct VideoCompareView: View {
     let currentVideo: Video
     let allVideos: [Video]
 
+    private var videosWithData: [Video] {
+        allVideos.filter { $0.analytics != nil }
+    }
+
     private var sortedVideos: [Video] {
-        allVideos
-            .filter { $0.analytics != nil }
+        videosWithData
             .sorted { ($0.analytics?.retention ?? 0) > ($1.analytics?.retention ?? 0) }
             .prefix(6)
             .map { $0 }
     }
 
     private var avgRetention: Double {
-        let vals = sortedVideos.compactMap { $0.analytics?.retention }
+        let vals = videosWithData.compactMap { $0.analytics?.retention }
         guard !vals.isEmpty else { return 0 }
         return vals.reduce(0, +) / Double(vals.count)
+    }
+
+    private var pattern: ChannelPattern? {
+        analyzePatterns(current: currentVideo, all: allVideos)
     }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
 
-                // MARK: - Video comparison list
-                sectionLabel("Your videos · sorted by retention")
-
                 if sortedVideos.isEmpty {
                     emptyState
                 } else {
+
+                    // MARK: - Auto-generated insights (replaces "look at what they have in common")
+                    if let p = pattern {
+                        sectionLabel("What your data says")
+                        autoInsightSection(p)
+                    }
+
+                    // MARK: - Video list (supporting evidence)
+                    sectionLabel("Your videos · sorted by retention")
                     VStack(spacing: 10) {
                         ForEach(sortedVideos) { video in
                             VideoCompareRow(
                                 video: video,
-                                isCurrentVideo: video.id == currentVideo.id
+                                isCurrentVideo: video.id == currentVideo.id,
+                                avgRetention: avgRetention
                             )
                         }
                     }
                 }
-
-                // MARK: - What the pattern tells you
-                sectionLabel("What this tells you")
-
-                InsightBlock(
-                    title: "The key pattern",
-                    content: "Look at the videos with the highest retention — what do they have in common? That's your formula. The goal is to find what you did right and do it again on purpose, not by accident.",
-                    accentColor: AppTheme.accent
-                )
-
-                if let worst = sortedVideos.last,
-                   worst.id != currentVideo.id {
-                    InsightBlock(
-                        title: "Your lowest performer",
-                        content: "'\(worst.title.prefix(40))…' had the weakest numbers. Compare how that video starts vs your best one. The difference in the first 30 seconds usually explains the gap.",
-                        accentColor: .red
-                    )
-                }
-
-                if avgRetention > 0 {
-                    InsightBlock(
-                        title: "Your channel average",
-                        content: "Across these videos, you're keeping \(Int(avgRetention * 100))% of viewers on average. Anything above that is a win worth studying. Anything below is worth understanding before you make another video like it.",
-                        accentColor: .green
-                    )
-                }
-
-                // MARK: - Channel pattern — coming soon
-                sectionLabel("Channel pattern analysis")
-                channelPatternComingSoon
 
                 Spacer(minLength: 40)
             }
@@ -76,38 +158,87 @@ struct VideoCompareView: View {
         }
     }
 
-    // MARK: - Coming soon card
-    private var channelPatternComingSoon: some View {
+    // MARK: - Auto insight section
+    @ViewBuilder
+    private func autoInsightSection(_ p: ChannelPattern) -> some View {
+
+        // Top pattern
+        InsightBlock(
+            title: "What your best videos have in common",
+            content: p.topPattern,
+            accentColor: .green
+        )
+
+        // Bottom pattern
+        if !p.bottomPattern.isEmpty {
+            InsightBlock(
+                title: "What your weakest videos have in common",
+                content: p.bottomPattern,
+                accentColor: .orange
+            )
+        }
+
+        // The one video to study
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "chart.line.uptrend.xyaxis")
-                    .font(.system(size: 13))
-                    .foregroundColor(AppTheme.accent)
-                Text("Deep pattern analysis")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(AppTheme.textPrimary)
-                Spacer()
-                Text("Coming soon")
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(AppTheme.accent)
+                    .frame(width: 5, height: 5)
+                Text("Study this one")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(AppTheme.accent)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(AppTheme.accent.opacity(0.1))
-                    .cornerRadius(8)
+                    .kerning(1.0)
+                    .textCase(.uppercase)
             }
-            Text("We'll scan all your videos and find what your best ones have in common — the title style, video length, opening format, and posting time that works best for your channel specifically.")
+
+            Text("\"\(p.studyVideo.title)\"")
+                .font(.system(size: 14, weight: .medium, design: .serif))
+                .foregroundColor(AppTheme.textPrimary)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(p.studyReason)
+                .font(.system(size: 12))
+                .foregroundColor(AppTheme.textSecondary)
+                .lineSpacing(3)
+
+            Text("Watch the first 60 seconds of this video back-to-back with your current one. The difference in how they open is almost always where the retention gap comes from.")
                 .font(.system(size: 12))
                 .foregroundColor(AppTheme.textSecondary)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
+
+            NavigationLink {
+                CoachReviewView(video: p.studyVideo, allVideos: allVideos)
+            } label: {
+                HStack(spacing: 5) {
+                    Text("Review this video in Coach")
+                        .font(.system(size: 12))
+                        .foregroundColor(AppTheme.accent)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 11))
+                        .foregroundColor(AppTheme.accent)
+                }
+            }
+            .padding(.top, 2)
         }
-        .padding(16)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(AppTheme.accent.opacity(0.05))
         .cornerRadius(16)
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(AppTheme.accent.opacity(0.15), lineWidth: 0.5)
+                .stroke(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
         )
+
+        // Channel average context
+        if avgRetention > 0 {
+            InsightBlock(
+                title: "Your channel average",
+                content: "You retain \(Int(avgRetention * 100))% of viewers on average. Any video above this is worth studying and repeating. Any video below it is worth understanding before you make another one like it.",
+                accentColor: AppTheme.accent
+            )
+        }
     }
 
     // MARK: - Empty state
@@ -136,6 +267,7 @@ struct VideoCompareView: View {
 struct VideoCompareRow: View {
     let video: Video
     let isCurrentVideo: Bool
+    var avgRetention: Double = 0
 
     private var retention: Double { video.analytics?.retention ?? 0 }
     private var ctr: Double { video.analytics?.ctr ?? 0 }
@@ -147,11 +279,24 @@ struct VideoCompareRow: View {
         return .red
     }
 
+    // Show whether this video is above or below channel average
+    private var vsAvgText: String? {
+        guard avgRetention > 0 else { return nil }
+        let diff = retention - avgRetention
+        let diffPct = Int(abs(diff) * 100)
+        if diffPct < 2 { return "At your average" }
+        return diff > 0 ? "+\(diffPct)% above avg" : "\(diffPct)% below avg"
+    }
+
+    private var vsAvgColor: Color {
+        guard avgRetention > 0 else { return AppTheme.textTertiary }
+        return retention >= avgRetention ? .green : .orange
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
-                    // "This video" badge for current
                     if isCurrentVideo {
                         Text("This video")
                             .font(.system(size: 9, weight: .semibold))
@@ -176,6 +321,11 @@ struct VideoCompareRow: View {
                     Text("retention")
                         .font(.system(size: 9))
                         .foregroundColor(AppTheme.textTertiary)
+                    if let vsAvg = vsAvgText {
+                        Text(vsAvg)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(vsAvgColor)
+                    }
                 }
             }
 

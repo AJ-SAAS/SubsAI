@@ -61,12 +61,11 @@ struct IntelligenceView: View {
 
     @ViewBuilder
     private func intelligenceContent(_ report: ChannelIntelligenceReport) -> some View {
-        sectionLabel("Growth quality score")
-        GrowthQualityCard(score: report.growthQualityScore, videos: vm.videos)
 
+        // Patterns first — the most immediately actionable insight
         if !report.winningPatterns.isEmpty {
             sectionLabel("Winning patterns")
-            WinningPatternsCard(patterns: report.winningPatterns)
+            WinningPatternsCard(patterns: report.winningPatterns, videos: vm.videos)
         }
 
         if !report.structuralWeaknesses.isEmpty {
@@ -83,8 +82,12 @@ struct IntelligenceView: View {
             .sorted { $0.growthPerView > $1.growthPerView }
         if !gpvVideos.isEmpty {
             sectionLabel("Best converting videos")
-            GPVLeaderboard(videos: Array(gpvVideos.prefix(5)))
+            GPVLeaderboard(videos: Array(gpvVideos.prefix(5)), allVideos: vm.videos)
         }
+
+        // Score last — supporting context, not the headline
+        sectionLabel("Growth quality score")
+        GrowthQualityCard(score: report.growthQualityScore, videos: vm.videos)
 
         comingSoonCard
     }
@@ -115,10 +118,15 @@ struct IntelligenceView: View {
     private func replicationSection(_ report: ChannelIntelligenceReport) -> some View {
         VStack(spacing: 8) {
             ForEach(vm.videosByPriority.prefix(6)) { video in
-                ReplicationRow(
-                    video: video,
-                    score: report.replicationScore(for: video)
-                )
+                NavigationLink {
+                    CoachReviewView(video: video, allVideos: vm.videos)
+                } label: {
+                    ReplicationRow(
+                        video: video,
+                        score: report.replicationScore(for: video)
+                    )
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -237,7 +245,6 @@ struct GrowthQualityCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
 
-            // Score header
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .lastTextBaseline, spacing: 8) {
@@ -280,7 +287,6 @@ struct GrowthQualityCard: View {
                 }
             }
 
-            // ✅ Description text — no dropdown needed
             Text("Your Growth Quality Score measures how efficiently your channel converts views into subscribers and watch time. A higher score means each view is working harder for your channel.")
                 .font(.system(size: 12))
                 .foregroundColor(AppTheme.textSecondary)
@@ -324,8 +330,10 @@ struct GrowthQualityCard: View {
 }
 
 // MARK: - GPVLeaderboard
+// Each row now links to CoachReviewView for that video
 struct GPVLeaderboard: View {
     let videos: [Video]
+    var allVideos: [Video] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -333,34 +341,43 @@ struct GPVLeaderboard: View {
                 if index > 0 {
                     Divider().padding(.horizontal, 14)
                 }
-                HStack(spacing: 10) {
-                    Text("#\(index + 1)")
-                        .font(.system(size: 12, weight: .medium, design: .serif))
-                        .foregroundColor(index == 0 ? .green : AppTheme.textTertiary)
-                        .frame(width: 24, alignment: .leading)
+                NavigationLink {
+                    CoachReviewView(video: video, allVideos: allVideos)
+                } label: {
+                    HStack(spacing: 10) {
+                        Text("#\(index + 1)")
+                            .font(.system(size: 12, weight: .medium, design: .serif))
+                            .foregroundColor(index == 0 ? .green : AppTheme.textTertiary)
+                            .frame(width: 24, alignment: .leading)
 
-                    VideoThumbnailMini(video: video)
-                        .frame(width: 56, height: 32)
-                        .cornerRadius(6)
-                        .clipped()
+                        VideoThumbnailMini(video: video)
+                            .frame(width: 56, height: 32)
+                            .cornerRadius(6)
+                            .clipped()
 
-                    Text(video.title)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(AppTheme.textPrimary)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(video.title)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(AppTheme.textPrimary)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
-                    VStack(alignment: .trailing, spacing: 1) {
-                        Text(String(format: "%.1f", video.growthPerView))
-                            .font(.system(size: 14, weight: .medium, design: .serif))
-                            .foregroundColor(gpvColor(video.growthPerView))
-                        Text("per 1K")
-                            .font(.system(size: 9))
+                        VStack(alignment: .trailing, spacing: 1) {
+                            Text(String(format: "%.1f", video.growthPerView))
+                                .font(.system(size: 14, weight: .medium, design: .serif))
+                                .foregroundColor(gpvColor(video.growthPerView))
+                            Text("per 1K")
+                                .font(.system(size: 9))
+                                .foregroundColor(AppTheme.textTertiary)
+                        }
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10))
                             .foregroundColor(AppTheme.textTertiary)
                     }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
+                .buttonStyle(.plain)
             }
         }
         .background(AppTheme.cardBackground)
@@ -419,8 +436,10 @@ struct IntelligenceMetricBar: View {
 }
 
 // MARK: - WinningPatternsCard
+// Now accepts videos so it can find the best example for each pattern
 struct WinningPatternsCard: View {
     let patterns: [WinningPattern]
+    var videos: [Video] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -428,8 +447,12 @@ struct WinningPatternsCard: View {
                 if index > 0 {
                     Divider().padding(.horizontal, 16)
                 }
-                WinningPatternRow(pattern: pattern)
-                    .padding(14)
+                WinningPatternRow(
+                    pattern: pattern,
+                    bestVideo: bestVideo(for: pattern),
+                    allVideos: videos
+                )
+                .padding(14)
             }
         }
         .background(AppTheme.cardBackground)
@@ -439,37 +462,66 @@ struct WinningPatternsCard: View {
                 .stroke(AppTheme.borderSubtle, lineWidth: 0.5)
         )
     }
+
+    // Find the highest GPV video as the best example for any pattern
+    private func bestVideo(for pattern: WinningPattern) -> Video? {
+        videos.filter { $0.growthPerView > 0 }
+              .max(by: { $0.growthPerView < $1.growthPerView })
+    }
 }
 
 // MARK: - WinningPatternRow
+// Now shows "Best example: [title] →" linking to CoachReviewView
 struct WinningPatternRow: View {
     let pattern: WinningPattern
+    var bestVideo: Video?
+    var allVideos: [Video] = []
 
     var body: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(AppTheme.success.opacity(0.1))
-                    .frame(width: 30, height: 30)
-                Image(systemName: pattern.icon)
-                    .font(.system(size: 12))
-                    .foregroundColor(AppTheme.success)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(AppTheme.success.opacity(0.1))
+                        .frame(width: 30, height: 30)
+                    Image(systemName: pattern.icon)
+                        .font(.system(size: 12))
+                        .foregroundColor(AppTheme.success)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(pattern.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(AppTheme.textPrimary)
+                    Text(pattern.description)
+                        .font(.system(size: 11))
+                        .foregroundColor(AppTheme.textSecondary)
+                        .lineSpacing(2)
+                        .lineLimit(2)
+                }
+                Spacer()
+                Text(pattern.liftText)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(pattern.liftIsPositive ? AppTheme.success : AppTheme.danger)
+                    .multilineTextAlignment(.trailing)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(pattern.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(AppTheme.textPrimary)
-                Text(pattern.description)
-                    .font(.system(size: 11))
-                    .foregroundColor(AppTheme.textSecondary)
-                    .lineSpacing(2)
-                    .lineLimit(2)
+
+            // Best example link
+            if let video = bestVideo {
+                NavigationLink {
+                    CoachReviewView(video: video, allVideos: allVideos)
+                } label: {
+                    HStack(spacing: 5) {
+                        Text("Best example: \"\(String(video.title.prefix(30)))\"")
+                            .font(.system(size: 11))
+                            .foregroundColor(AppTheme.accent)
+                            .lineLimit(1)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 10))
+                            .foregroundColor(AppTheme.accent)
+                    }
+                }
+                .buttonStyle(.plain)
             }
-            Spacer()
-            Text(pattern.liftText)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(pattern.liftIsPositive ? AppTheme.success : AppTheme.danger)
-                .multilineTextAlignment(.trailing)
         }
     }
 }
@@ -497,7 +549,7 @@ struct StructuralWeaknessCard: View {
     }
 }
 
-// MARK: - WeaknessRow — ✅ alignment fixed
+// MARK: - WeaknessRow
 struct WeaknessRow: View {
     let weakness: StructuralWeakness
 
