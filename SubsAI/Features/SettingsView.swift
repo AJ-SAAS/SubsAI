@@ -3,78 +3,149 @@ import SwiftUI
 import GoogleSignIn
 
 struct SettingsView: View {
-    @State private var showingRevokeAlert = false
+
+    @ObservedObject private var auth = AuthManager.shared
+    @State private var showDisconnectAlert = false
+    @State private var showDeleteAlert = false
     @State private var statusMessage = ""
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    HStack {
-                        Image(systemName: "checkmark.seal.fill")
-                            .foregroundColor(.green)
-                        Text("Connected to YouTube")
-                            .font(.headline)
-                    }
-                }
+            ZStack {
+                AppTheme.background.ignoresSafeArea()
 
-                Section("Account Actions") {
-                    Button(role: .destructive) {
-                        showingRevokeAlert = true
-                    } label: {
-                        Label("Disconnect YouTube Channel", systemImage: "rectangle.portrait.and.arrow.right")
-                    }
-                }
+                Form {
 
-                Section("Legal") {
-                    Link("Privacy Policy", destination: URL(string: "https://subsai.app/privacy")!)
-                    Link("Terms of Use", destination: URL(string: "https://subsai.app/terms")!)
-                }
-
-                if !statusMessage.isEmpty {
+                    // MARK: - Account
                     Section {
-                        Text(statusMessage)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        HStack(spacing: 12) {
+                            ZStack {
+                                Circle()
+                                    .fill(AppTheme.accent.opacity(0.12))
+                                    .frame(width: 44, height: 44)
+                                Image(systemName: providerIcon)
+                                    .font(.system(size: 18))
+                                    .foregroundColor(AppTheme.accent)
+                            }
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(auth.currentUser?.displayName ?? "Signed in")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundColor(AppTheme.textPrimary)
+                                Text(providerLabel)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(AppTheme.textSecondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    } header: {
+                        Text("Account")
+                    }
+
+                    // MARK: - YouTube connection
+                    Section {
+                        HStack(spacing: 10) {
+                            Image(systemName: auth.isYouTubeConnected
+                                  ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundColor(auth.isYouTubeConnected ? .green : .red)
+                            Text(auth.isYouTubeConnected
+                                 ? "YouTube channel connected"
+                                 : "No YouTube channel connected")
+                                .font(.system(size: 14))
+                                .foregroundColor(AppTheme.textPrimary)
+                        }
+
+                        if auth.isYouTubeConnected {
+                            Button(role: .destructive) {
+                                showDisconnectAlert = true
+                            } label: {
+                                Label("Disconnect YouTube", systemImage: "link.badge.minus")
+                            }
+                        }
+                    } header: {
+                        Text("YouTube")
+                    }
+
+                    // MARK: - Legal
+                    Section {
+                        Link("Privacy Policy",
+                             destination: URL(string: "https://subsai.app/privacy")!)
+                        Link("Terms of Use",
+                             destination: URL(string: "https://subsai.app/terms")!)
+                    } header: {
+                        Text("Legal")
+                    }
+
+                    // MARK: - Sign out / delete
+                    Section {
+                        Button(role: .destructive) {
+                            AuthManager.shared.signOut()
+                        } label: {
+                            Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
+
+                        Button(role: .destructive) {
+                            showDeleteAlert = true
+                        } label: {
+                            Label("Delete account", systemImage: "trash")
+                        }
+                    } header: {
+                        Text("Account actions")
+                    } footer: {
+                        Text("Deleting your account removes all your data from SubsAI. This cannot be undone.")
+                            .font(.system(size: 11))
+                    }
+
+                    if !statusMessage.isEmpty {
+                        Section {
+                            Text(statusMessage)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
+                .scrollContentBackground(.hidden)
             }
             .navigationTitle("Settings")
-            .alert("Disconnect YouTube?", isPresented: $showingRevokeAlert) {
+            .alert("Disconnect YouTube?", isPresented: $showDisconnectAlert) {
                 Button("Cancel", role: .cancel) { }
                 Button("Disconnect", role: .destructive) {
-                    Task { await revokeAccess() }
+                    Task { await disconnectYouTube() }
                 }
             } message: {
-                Text("This will sign you out completely. You can reconnect anytime.")
+                Text("This will remove YouTube access. You can reconnect anytime.")
+            }
+            .alert("Delete account?", isPresented: $showDeleteAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    Task { await AuthManager.shared.deleteAccount() }
+                }
+            } message: {
+                Text("This will permanently delete your SubsAI account and all associated data. This cannot be undone.")
             }
         }
     }
 
-    @MainActor
-    private func revokeAccess() async {
-        statusMessage = "Signing out..."
-
-        // Sign out from Google (clears the cached user)
-        GIDSignIn.sharedInstance.signOut()
-
-        // Optional: completely revoke access (breaks refresh tokens too)
-        do {
-            try await GIDSignIn.sharedInstance.disconnect()
-            print("Google access revoked completely")
-        } catch {
-            print("Disconnect failed (this is okay):", error)
+    private var providerIcon: String {
+        switch auth.currentUser?.provider {
+        case .apple:  return "apple.logo"
+        case .google: return "globe"
+        case nil:     return "person.circle"
         }
+    }
 
-        // Clear your app state
-        AuthManager.shared.signOut()
+    private var providerLabel: String {
+        switch auth.currentUser?.provider {
+        case .apple:  return "Signed in with Apple"
+        case .google: return "Signed in with Google"
+        case nil:     return "Signed in"
+        }
+    }
 
-        statusMessage = "Signed out successfully"
-        
-        // Notify rest of app
+    private func disconnectYouTube() async {
+        statusMessage = "Disconnecting…"
+        try? await GIDSignIn.sharedInstance.disconnect()
+        AuthManager.shared.setYouTubeConnected(false)
+        statusMessage = "YouTube disconnected"
         NotificationCenter.default.post(name: .youtubeAccessRevoked, object: nil)
     }
-}
-
-extension Notification.Name {
 }
