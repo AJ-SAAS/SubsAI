@@ -2,11 +2,11 @@ import SwiftUI
 
 struct MainTabView: View {
 
-    @StateObject private var coachVM = CoachViewModel()
+    @StateObject private var coachVM = CoachViewModel(autoLoad: false)
 
     var body: some View {
         TabView {
-            DashboardView()
+            DashboardView(coachVM: coachVM)
                 .tabItem {
                     Label("Home", systemImage: "house.fill")
                 }
@@ -30,10 +30,25 @@ struct MainTabView: View {
         .onAppear {
             let appearance = UITabBarAppearance()
             appearance.configureWithOpaqueBackground()
-            // ✅ UIColor not Color
             appearance.backgroundColor = UIColor.systemBackground
             UITabBar.appearance().standardAppearance = appearance
             UITabBar.appearance().scrollEdgeAppearance = appearance
+
+            // Trigger load on appear — loadVideos guards on isYouTubeConnected
+            // so this is safe even before auth is fully restored
+            Task {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                await coachVM.loadVideos()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .authRestored)) { _ in
+            Task { await coachVM.loadVideos() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .signInCompleted)) { _ in
+            Task { await coachVM.loadVideos() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .signInGoogleCompleted)) { _ in
+            Task { await coachVM.loadVideos() }
         }
     }
 }

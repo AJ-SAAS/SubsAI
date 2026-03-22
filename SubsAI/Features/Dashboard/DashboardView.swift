@@ -3,6 +3,7 @@ import SwiftUI
 
 struct DashboardView: View {
     @StateObject private var vm = HomeViewModel()
+    var coachVM: CoachViewModel
     @State private var showGoalSheet = false
     @State private var customGoals: [(GoalType, Int)] = []
     @State private var authErrorMessage: String?
@@ -33,43 +34,54 @@ struct DashboardView: View {
                 AppTheme.background.ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 20) {
+                    VStack(spacing: 24) {
 
                         // 1 — Channel header
                         if let channel = vm.channelInfo {
                             channelHeader(channel)
                         }
 
-                        // 2 — Focus card
+                        // 2 — What's happening right now
                         if let channel = vm.channelInfo {
-                            let focus = channelFocus(channel)
-                            if focus.linksToCoach {
-                                NavigationLink {
-                                    CoachView(vm: CoachViewModel())
-                                } label: {
+                            VStack(alignment: .leading, spacing: 10) {
+                                sectionLabel("What's happening right now")
+                                let focus = channelFocus(channel)
+                                if focus.linksToCoach {
+                                    NavigationLink {
+                                        CoachView(vm: coachVM)
+                                    } label: {
+                                        focusCard(channel)
+                                    }
+                                    .buttonStyle(.plain)
+                                } else {
                                     focusCard(channel)
                                 }
-                                .buttonStyle(.plain)
-                            } else {
-                                focusCard(channel)
                             }
                         }
 
-                        // 3 — Latest video
-                        latestVideoSection()
-
-                        // 4 — Period selector
-                        periodSelector
-
-                        // 5 — Stats grid
-                        if let channel = vm.channelInfo {
-                            statsGrid(channel)
-                            aiInsightStrip(channel)
+                        // 3 — How is my latest video doing?
+                        VStack(alignment: .leading, spacing: 10) {
+                            sectionLabel("How is my latest video doing?")
+                            latestVideoContent()
                         }
 
-                        // 6 — Milestones
+                        // 4 — How has my channel grown?
+                        if vm.channelInfo != nil {
+                            VStack(alignment: .leading, spacing: 10) {
+                                sectionLabel("How has my channel grown?")
+                                periodSelector
+                                if let channel = vm.channelInfo {
+                                    statsGrid(channel)
+                                }
+                            }
+                        }
+
+                        // 5 — Where am I headed?
                         if let channel = vm.channelInfo {
-                            milestonesSection(channel)
+                            VStack(alignment: .leading, spacing: 10) {
+                                sectionLabel("Where am I headed?")
+                                milestonesSection(channel)
+                            }
                         }
 
                         if vm.isLoading && vm.channelInfo == nil {
@@ -97,9 +109,16 @@ struct DashboardView: View {
             .presentationDragIndicator(.visible)
         }
         .onAppear {
+            // Safe — loadChannelStats guards on isYouTubeConnected internally
+            Task { await vm.loadChannelStats() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .authRestored)) { _ in
             Task { await vm.loadChannelStats() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .signInGoogleCompleted)) { _ in
+            Task { await vm.loadChannelStats() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .signInCompleted)) { _ in
             Task { await vm.loadChannelStats() }
         }
         .alert("Error", isPresented: Binding<Bool>(
@@ -362,53 +381,9 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: - AI insight strip
-    private func aiInsightStrip(_ channel: Channel) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Image(systemName: "scope")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.orange)
-                Text("Channel focus")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.orange)
-                    .kerning(0.5)
-                    .textCase(.uppercase)
-            }
-
-            Text(aiInsightText(channel))
-                .font(.system(size: 13))
-                .foregroundColor(AppTheme.textSecondary)
-                .lineSpacing(4)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.07))
-        .cornerRadius(16)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.orange.opacity(0.2), lineWidth: 0.5)
-        )
-    }
-
-    private func aiInsightText(_ channel: Channel) -> String {
-        if let growth = vm.subscriberGrowth, growth.absolute > 0 {
-            return "You gained \(growth.absolute.formatted()) subscribers \(vm.selectedPeriod.label). Keep your upload pace consistent to maintain this momentum."
-        }
-        if let growth = vm.viewGrowth, growth.absolute > 0 {
-            return "Your videos got \(growth.absolute.formatted()) views \(vm.selectedPeriod.label). Focus on improving CTR on your next upload to accelerate growth."
-        }
-        if channel.totalViews > 0 {
-            return "Your channel has \(channel.totalViews.formatted()) total views. Improving your thumbnail and title CTR is the fastest way to grow right now."
-        }
-        return "Welcome back. Check your latest video performance below."
-    }
-
-    // MARK: - Latest video section
-    private func latestVideoSection() -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionLabel("Latest video")
-
+    // MARK: - Latest video content
+    private func latestVideoContent() -> some View {
+        Group {
             if let video = vm.latestVideo {
                 NavigationLink {
                     VideoDeepAnalysisView(video: video, allVideos: [video])
@@ -454,8 +429,6 @@ struct DashboardView: View {
     // MARK: - Milestones section
     private func milestonesSection(_ channel: Channel) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionLabel("Milestones")
-
             MilestoneCard(
                 current: channel.subscribers,
                 target: nextSubsMilestone,
@@ -571,10 +544,10 @@ struct DashboardView: View {
         )
     }
 
+    // MARK: - Section label
     private func sectionLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .medium))
+        Text(text)
+            .font(.system(size: 13, weight: .medium))
             .foregroundColor(AppTheme.textSecondary)
-            .kerning(1.0)
     }
 }

@@ -62,32 +62,61 @@ struct IntelligenceView: View {
     @ViewBuilder
     private func intelligenceContent(_ report: ChannelIntelligenceReport) -> some View {
 
-        // Patterns first — the most immediately actionable insight
+        // 1 — Winning patterns
         if !report.winningPatterns.isEmpty {
-            sectionLabel("Winning patterns")
+            sectionLabel("What's working on your channel")
             WinningPatternsCard(patterns: report.winningPatterns, videos: vm.videos)
         }
 
-        if !report.structuralWeaknesses.isEmpty {
-            sectionLabel("What to fix")
-            StructuralWeaknessCard(weaknesses: report.structuralWeaknesses)
+        // 2 — Growth quality score
+        sectionLabel("How efficiently is your channel growing?")
+        GrowthQualityCard(score: report.growthQualityScore, videos: vm.videos)
+
+        // 3 — Top 3 fixes
+        sectionLabel("Your top 3 fixes right now")
+        TopFixesCard(videos: vm.videos, weaknesses: report.structuralWeaknesses)
+
+        // 4 — Best time to post
+        if let insight = vm.postingTimeInsight {
+            sectionLabel("When should you post?")
+            PostingTimeCard(insight: insight)
         }
 
-        sectionLabel("Should you make more?")
-        replicationExplainer
-        replicationSection(report)
-
+        // 5 — Best converting videos
         let gpvVideos = vm.videos
             .filter { $0.growthPerView > 0 }
             .sorted { $0.growthPerView > $1.growthPerView }
         if !gpvVideos.isEmpty {
-            sectionLabel("Best converting videos")
+            sectionLabel("Your best converting videos")
             GPVLeaderboard(videos: Array(gpvVideos.prefix(5)), allVideos: vm.videos)
         }
 
-        // Score last — supporting context, not the headline
-        sectionLabel("Growth quality score")
-        GrowthQualityCard(score: report.growthQualityScore, videos: vm.videos)
+        // 6 — Videos worth repeating (Replicate only)
+        let replicateVideos = vm.videosByPriority
+            .filter { report.replicationScore(for: $0) == .replicate }
+            .prefix(4)
+        if !replicateVideos.isEmpty {
+            sectionLabel("Videos worth repeating")
+            replicationExplainer
+            VStack(spacing: 8) {
+                ForEach(Array(replicateVideos)) { video in
+                    NavigationLink {
+                        CoachReviewView(
+                            video: video,
+                            allVideos: vm.videos,
+                            postingTimeInsight: vm.postingTimeInsight,
+                            vm: vm
+                        )
+                    } label: {
+                        ReplicationRow(
+                            video: video,
+                            score: report.replicationScore(for: video)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
 
         comingSoonCard
     }
@@ -100,7 +129,7 @@ struct IntelligenceView: View {
                 .padding(.top, 1)
                 .frame(width: 20)
 
-            Text("Each video is rated based on whether it outperformed your channel average. Replicate means make more like it. One-off means it was a lucky spike. Avoid means this format isn't working for your channel.")
+            Text("These videos outperformed your channel average on both retention and subscriber conversion. Make more like them.")
                 .font(.system(size: 12))
                 .foregroundColor(AppTheme.textSecondary)
                 .lineSpacing(3)
@@ -113,22 +142,6 @@ struct IntelligenceView: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(AppTheme.accent.opacity(0.15), lineWidth: 0.5)
         )
-    }
-
-    private func replicationSection(_ report: ChannelIntelligenceReport) -> some View {
-        VStack(spacing: 8) {
-            ForEach(vm.videosByPriority.prefix(6)) { video in
-                NavigationLink {
-                    CoachReviewView(video: video, allVideos: vm.videos)
-                } label: {
-                    ReplicationRow(
-                        video: video,
-                        score: report.replicationScore(for: video)
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-        }
     }
 
     private var comingSoonCard: some View {
@@ -193,10 +206,9 @@ struct IntelligenceView: View {
     }
 
     private func sectionLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .medium))
+        Text(text)
+            .font(.system(size: 13, weight: .medium))
             .foregroundColor(AppTheme.textSecondary)
-            .kerning(1.0)
     }
 
     private func loadSafely() async {
@@ -207,6 +219,279 @@ struct IntelligenceView: View {
         } catch {
             authError = .sessionExpired
         }
+    }
+}
+
+// MARK: - PostingTimeCard
+struct PostingTimeCard: View {
+    let insight: PostingTimeInsight
+
+    private var reliabilityColor: Color {
+        insight.isReliable ? .green : .orange
+    }
+
+    private var reliabilityLabel: String {
+        insight.isReliable ? "Reliable signal" : "Early signal"
+    }
+
+    private var gapPercent: Int {
+        guard insight.worstDayAvgViews > 0 else { return 0 }
+        let gap = Double(insight.bestDayAvgViews - insight.worstDayAvgViews)
+            / Double(insight.bestDayAvgViews) * 100
+        return Int(gap)
+    }
+
+    private func formatViews(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 1_000     { return String(format: "%.1fK", Double(n) / 1_000) }
+        return "\(n)"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+
+            // Header
+            HStack(spacing: 8) {
+                Image(systemName: "clock.fill")
+                    .font(.system(size: 13))
+                    .foregroundColor(.cyan)
+                Text("Based on \(insight.sampleSize) videos")
+                    .font(.system(size: 11))
+                    .foregroundColor(AppTheme.textSecondary)
+                Spacer()
+                Text(reliabilityLabel)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(reliabilityColor)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(reliabilityColor.opacity(0.1))
+                    .cornerRadius(8)
+            }
+
+            // Best vs worst day comparison
+            HStack(spacing: 12) {
+                // Best day
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Best day")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.green)
+                        .kerning(0.5)
+                        .textCase(.uppercase)
+                    Text(insight.bestDay)
+                        .font(.system(size: 22, weight: .medium, design: .serif))
+                        .foregroundColor(AppTheme.textPrimary)
+                    Text("\(formatViews(insight.bestDayAvgViews)) avg views")
+                        .font(.system(size: 12))
+                        .foregroundColor(AppTheme.textSecondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Color.green.opacity(0.06))
+                .cornerRadius(14)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.green.opacity(0.2), lineWidth: 0.5)
+                )
+
+                // Worst day
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Worst day")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.red)
+                        .kerning(0.5)
+                        .textCase(.uppercase)
+                    Text(insight.worstDay)
+                        .font(.system(size: 22, weight: .medium, design: .serif))
+                        .foregroundColor(AppTheme.textPrimary)
+                    Text("\(formatViews(insight.worstDayAvgViews)) avg views")
+                        .font(.system(size: 12))
+                        .foregroundColor(AppTheme.textSecondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Color.red.opacity(0.06))
+                .cornerRadius(14)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.red.opacity(0.2), lineWidth: 0.5)
+                )
+            }
+
+            // Gap callout
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 11))
+                    .foregroundColor(.cyan)
+                    .padding(.top, 1)
+                Text("\(insight.bestDay) uploads get \(gapPercent)% more views on average than \(insight.worstDay). Schedule your next upload for \(insight.bestDay).")
+                    .font(.system(size: 12))
+                    .foregroundColor(AppTheme.textSecondary)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // Reliability note if early signal
+            if !insight.isReliable {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 11))
+                        .foregroundColor(.orange)
+                        .padding(.top, 1)
+                    Text("This is an early signal based on \(insight.sampleSize) videos. It will sharpen as you upload more consistently.")
+                        .font(.system(size: 11))
+                        .foregroundColor(AppTheme.textTertiary)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(16)
+        .background(AppTheme.cardBackground)
+        .cornerRadius(20)
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(AppTheme.borderSubtle, lineWidth: 0.5)
+        )
+    }
+}
+
+// MARK: - TopFixesCard
+struct TopFixesCard: View {
+    let videos: [Video]
+    let weaknesses: [StructuralWeakness]
+
+    private var topFixes: [(number: Int, title: String, detail: String, color: Color)] {
+        let enriched = videos.filter { $0.analytics != nil }
+        guard !enriched.isEmpty else { return [] }
+
+        var fixes: [(priority: Int, title: String, detail: String, color: Color)] = []
+
+        let avgCTR = enriched.compactMap { $0.analytics?.ctr }.reduce(0, +) / Double(enriched.count)
+        let lowCTRCount = enriched.filter { ($0.analytics?.ctr ?? 0) < 0.05 }.count
+        if avgCTR < 0.05 && lowCTRCount >= 2 {
+            fixes.append((
+                priority: 3,
+                title: "Fix your thumbnails and titles",
+                detail: "\(lowCTRCount) of your last \(enriched.count) videos have CTR below 5%. Viewers are seeing your content but not clicking. This is your highest-leverage fix — improving CTR multiplies every other metric.",
+                color: .red
+            ))
+        }
+
+        let avgRetention = enriched.compactMap { $0.analytics?.retention }.reduce(0, +) / Double(enriched.count)
+        let lowHookCount = enriched.filter { ($0.analytics?.retention ?? 0) < 0.30 }.count
+        if lowHookCount >= 2 {
+            fixes.append((
+                priority: 2,
+                title: "Strengthen your opening 30 seconds",
+                detail: "\(lowHookCount) of your last \(enriched.count) videos lose most viewers before the 30% mark. Your hooks need to create immediate curiosity — start with the payoff, not the setup.",
+                color: .orange
+            ))
+        } else if avgRetention < 0.35 {
+            fixes.append((
+                priority: 1,
+                title: "Improve mid-video retention",
+                detail: "Your average retention is \(Int(avgRetention * 100))% — below the 35% benchmark. Add a re-hook every 3–4 minutes to pull viewers back before they leave.",
+                color: .orange
+            ))
+        }
+
+        let belowExpectedCount = enriched.filter {
+            $0.views < ($0.analytics?.expectedViews ?? 0)
+        }.count
+        if belowExpectedCount >= 2 {
+            fixes.append((
+                priority: 1,
+                title: "Improve how YouTube finds your videos",
+                detail: "\(belowExpectedCount) of your last \(enriched.count) videos are getting fewer views than expected for your CTR. Your titles and descriptions may not be helping YouTube surface your content to the right audience.",
+                color: .yellow
+            ))
+        }
+
+        if fixes.count < 3 {
+            for weakness in weaknesses.prefix(3 - fixes.count) {
+                fixes.append((
+                    priority: 0,
+                    title: weakness.title,
+                    detail: weakness.detail,
+                    color: .yellow
+                ))
+            }
+        }
+
+        let sorted = fixes.sorted { $0.priority > $1.priority }.prefix(3)
+        return sorted.enumerated().map { index, fix in
+            (number: index + 1, title: fix.title, detail: fix.detail, color: fix.color)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if topFixes.isEmpty {
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(.green)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("No major issues found")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(AppTheme.textPrimary)
+                        Text("Your channel metrics are above benchmark. Keep uploading consistently.")
+                            .font(.system(size: 12))
+                            .foregroundColor(AppTheme.textSecondary)
+                            .lineSpacing(3)
+                    }
+                }
+                .padding(16)
+            } else {
+                ForEach(Array(topFixes.enumerated()), id: \.offset) { index, fix in
+                    if index > 0 {
+                        Divider().padding(.horizontal, 16)
+                    }
+                    TopFixRow(number: fix.number, title: fix.title, detail: fix.detail, color: fix.color)
+                }
+            }
+        }
+        .background(AppTheme.cardBackground)
+        .cornerRadius(20)
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(AppTheme.borderSubtle, lineWidth: 0.5)
+        )
+    }
+}
+
+// MARK: - TopFixRow
+struct TopFixRow: View {
+    let number: Int
+    let title: String
+    let detail: String
+    let color: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(color.opacity(0.12))
+                    .frame(width: 28, height: 28)
+                Text("\(number)")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(color)
+            }
+            .frame(width: 28)
+            .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(AppTheme.textPrimary)
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundColor(AppTheme.textSecondary)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(16)
     }
 }
 
@@ -287,7 +572,7 @@ struct GrowthQualityCard: View {
                 }
             }
 
-            Text("Your Growth Quality Score measures how efficiently your channel converts views into subscribers and watch time. A higher score means each view is working harder for your channel.")
+            Text("How efficiently your channel converts views into subscribers. A higher score means each view is working harder for your channel.")
                 .font(.system(size: 12))
                 .foregroundColor(AppTheme.textSecondary)
                 .lineSpacing(3)
@@ -330,7 +615,6 @@ struct GrowthQualityCard: View {
 }
 
 // MARK: - GPVLeaderboard
-// Each row now links to CoachReviewView for that video
 struct GPVLeaderboard: View {
     let videos: [Video]
     var allVideos: [Video] = []
@@ -354,6 +638,7 @@ struct GPVLeaderboard: View {
                             .frame(width: 56, height: 32)
                             .cornerRadius(6)
                             .clipped()
+                            .background(Color.gray.opacity(0.2).cornerRadius(6))
 
                         Text(video.title)
                             .font(.system(size: 12, weight: .medium))
@@ -436,7 +721,6 @@ struct IntelligenceMetricBar: View {
 }
 
 // MARK: - WinningPatternsCard
-// Now accepts videos so it can find the best example for each pattern
 struct WinningPatternsCard: View {
     let patterns: [WinningPattern]
     var videos: [Video] = []
@@ -463,7 +747,6 @@ struct WinningPatternsCard: View {
         )
     }
 
-    // Find the highest GPV video as the best example for any pattern
     private func bestVideo(for pattern: WinningPattern) -> Video? {
         videos.filter { $0.growthPerView > 0 }
               .max(by: { $0.growthPerView < $1.growthPerView })
@@ -471,7 +754,6 @@ struct WinningPatternsCard: View {
 }
 
 // MARK: - WinningPatternRow
-// Now shows "Best example: [title] →" linking to CoachReviewView
 struct WinningPatternRow: View {
     let pattern: WinningPattern
     var bestVideo: Video?
@@ -505,7 +787,6 @@ struct WinningPatternRow: View {
                     .multilineTextAlignment(.trailing)
             }
 
-            // Best example link
             if let video = bestVideo {
                 NavigationLink {
                     CoachReviewView(video: video, allVideos: allVideos)
@@ -526,7 +807,7 @@ struct WinningPatternRow: View {
     }
 }
 
-// MARK: - StructuralWeaknessCard
+// MARK: - StructuralWeaknessCard (kept for backward compat)
 struct StructuralWeaknessCard: View {
     let weaknesses: [StructuralWeakness]
 
@@ -562,11 +843,12 @@ struct WeaknessRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .top, spacing: 12) {
             Circle()
                 .fill(dotColor)
                 .frame(width: 6, height: 6)
-                .alignmentGuide(.firstTextBaseline) { d in d[.bottom] + 4 }
+                .frame(width: 6)
+                .padding(.top, 5)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(weakness.title)
@@ -613,6 +895,7 @@ struct ReplicationRow: View {
                 .frame(width: 72, height: 42)
                 .cornerRadius(6)
                 .clipped()
+                .background(Color.gray.opacity(0.2).cornerRadius(6))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(video.title)

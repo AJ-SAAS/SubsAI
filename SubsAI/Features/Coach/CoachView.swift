@@ -51,7 +51,8 @@ struct CoachView: View {
                             NextUploadBriefingCard(
                                 videos: vm.videos,
                                 report: vm.intelligenceReport,
-                                postingTimeInsight: vm.postingTimeInsight
+                                postingTimeInsight: vm.postingTimeInsight,
+                                vm: vm
                             )
                         } else if vm.isLoading {
                             diagnosisPlaceholder
@@ -89,7 +90,12 @@ struct CoachView: View {
 
                             ForEach(sortedVideos) { video in
                                 NavigationLink {
-                                    CoachReviewView(video: video, allVideos: vm.videos)
+                                    CoachReviewView(
+                                        video: video,
+                                        allVideos: vm.videos,
+                                        postingTimeInsight: vm.postingTimeInsight,
+                                        vm: vm
+                                    )
                                 } label: {
                                     CoachVideoCard(
                                         video: video,
@@ -193,7 +199,8 @@ struct CoachView: View {
 struct NextUploadBriefingCard: View {
     let videos: [Video]
     let report: ChannelIntelligenceReport?
-    var postingTimeInsight: PostingTimeInsight? = nil  // ← added
+    var postingTimeInsight: PostingTimeInsight? = nil
+    var vm: CoachViewModel? = nil
 
     private var channelAvgCTR: Double {
         let ctrs = videos.compactMap { $0.analytics?.ctr }
@@ -261,7 +268,7 @@ struct NextUploadBriefingCard: View {
                 )
             }
 
-            // Line 4 — posting time (only shown if reliable signal exists)
+            // Line 4 — posting time
             if let insight = postingTimeInsight {
                 BriefingLine(
                     icon: "clock",
@@ -270,20 +277,22 @@ struct NextUploadBriefingCard: View {
                 )
             }
 
-            // Link to Intelligence
-            NavigationLink {
-                IntelligenceView(vm: CoachViewModel())
-            } label: {
-                HStack(spacing: 5) {
-                    Text("See all patterns in Intelligence")
-                        .font(.system(size: 12))
-                        .foregroundColor(AppTheme.accent)
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 11))
-                        .foregroundColor(AppTheme.accent)
+            // Link to Intelligence — uses passed vm, never creates a new one
+            if let vm = vm {
+                NavigationLink {
+                    IntelligenceView(vm: vm)
+                } label: {
+                    HStack(spacing: 5) {
+                        Text("See all patterns in Intelligence")
+                            .font(.system(size: 12))
+                            .foregroundColor(AppTheme.accent)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 11))
+                            .foregroundColor(AppTheme.accent)
+                    }
                 }
+                .padding(.top, 2)
             }
-            .padding(.top, 2)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)

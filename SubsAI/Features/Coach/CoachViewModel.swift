@@ -52,7 +52,6 @@ struct PostingTimeInsight {
     let sampleSize: Int
     let isReliable: Bool
 
-    // True if current video was posted on a suboptimal day
     func isSuboptimal(for video: Video) -> Bool {
         guard isReliable else { return false }
         let formatter = DateFormatter()
@@ -61,13 +60,11 @@ struct PostingTimeInsight {
         return day == worstDay
     }
 
-    // Human-readable line for briefing card
     var briefingLine: String {
         let reliability = isReliable ? "" : " (early signal — more uploads will sharpen this)"
         return "Your \(bestDay) uploads average \(formatViews(bestDayAvgViews)) views vs \(formatViews(worstDayAvgViews)) on \(worstDay). Post your next video on \(bestDay)\(reliability)."
     }
 
-    // Human-readable line for video review
     func reviewLine(for video: Video) -> String? {
         guard isSuboptimal(for: video) else { return nil }
         let formatter = DateFormatter()
@@ -162,11 +159,24 @@ final class CoachViewModel: ObservableObject {
     @Published var intelligenceReport: ChannelIntelligenceReport?
     @Published var postingTimeInsight: PostingTimeInsight?
 
-    init() {
-        Task { await loadVideos() }
+    // autoLoad: false prevents concurrent token refreshes on cold launch
+    init(autoLoad: Bool = true) {
+        if autoLoad {
+            Task {
+                // Let AppDelegate finish restoring previous sign-in first
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                await loadVideos()
+            }
+        }
     }
 
     func loadVideos() async {
+        // Don't attempt a network call if YouTube isn't connected yet
+        guard AuthManager.shared.isYouTubeConnected else {
+            print("⏭ loadVideos skipped — YouTube not connected")
+            return
+        }
+
         isLoading = true
         defer { isLoading = false }
 
@@ -184,9 +194,9 @@ final class CoachViewModel: ObservableObject {
 
             await enrichWithAnalytics(accessToken: token)
 
-            self.diagnosis           = ChannelDiagnosis.generate(from: self.videos)
-            self.intelligenceReport  = ChannelIntelligenceReport.generate(from: self.videos)
-            self.postingTimeInsight  = analyzePostingTimes()
+            self.diagnosis          = ChannelDiagnosis.generate(from: self.videos)
+            self.intelligenceReport = ChannelIntelligenceReport.generate(from: self.videos)
+            self.postingTimeInsight = analyzePostingTimes()
 
             print("✅ Loaded \(videos.count) videos")
 
@@ -209,17 +219,14 @@ final class CoachViewModel: ObservableObject {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEEE"
 
-        // Group view counts by day of week
         var dayGroups: [String: [Int]] = [:]
         for video in videosWithViews {
             let day = formatter.string(from: video.publishedAt)
             dayGroups[day, default: []].append(video.views)
         }
 
-        // Need at least 2 different days to compare
         guard dayGroups.count >= 2 else { return nil }
 
-        // Average views per day
         let dayAverages = dayGroups.mapValues { views -> Int in
             views.reduce(0, +) / views.count
         }
@@ -230,7 +237,6 @@ final class CoachViewModel: ObservableObject {
             best.key != worst.key
         else { return nil }
 
-        // Only surface if there's a meaningful gap (at least 20% difference)
         let gap = Double(best.value - worst.value) / Double(max(best.value, 1))
         guard gap >= 0.20 else { return nil }
 

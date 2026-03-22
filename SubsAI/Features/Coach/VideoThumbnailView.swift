@@ -11,19 +11,14 @@ struct VideoThumbnailView: View {
                     image
                         .resizable()
                         .scaledToFill()
-                        .frame(height: 180)
-                        .clipped()
-                        .cornerRadius(12)
+                case .failure:
+                    placeholder
                 default:
                     placeholder
-                        .frame(height: 180)
-                        .cornerRadius(12)
                 }
             }
         } else {
             placeholder
-                .frame(height: 180)
-                .cornerRadius(12)
         }
     }
 
@@ -49,8 +44,8 @@ struct VideoThumbnailMini: View {
                     image
                         .resizable()
                         .scaledToFill()
-                        .frame(width: 80, height: 45)
-                        .clipped()
+                case .failure:
+                    miniPlaceholder
                 default:
                     miniPlaceholder
                 }
@@ -63,7 +58,6 @@ struct VideoThumbnailMini: View {
     private var miniPlaceholder: some View {
         Rectangle()
             .fill(Color.gray.opacity(0.3))
-            .frame(width: 80, height: 45)
             .overlay(
                 Image(systemName: "play.fill")
                     .font(.caption)

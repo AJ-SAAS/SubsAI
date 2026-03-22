@@ -5,6 +5,7 @@ struct CoachReviewView: View {
     let video: Video
     var allVideos: [Video] = []
     var postingTimeInsight: PostingTimeInsight? = nil
+    var vm: CoachViewModel? = nil
 
     private var verdict: CoachVerdict { video.verdict }
     private var fix: CoachFix { video.primaryFix }
@@ -198,9 +199,10 @@ struct CoachReviewView: View {
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if isPattern {
+            // Uses passed vm — never creates a new CoachViewModel
+            if isPattern, let vm = vm {
                 NavigationLink {
-                    IntelligenceView(vm: CoachViewModel())
+                    IntelligenceView(vm: vm)
                 } label: {
                     HStack(spacing: 4) {
                         Text("See full channel analysis in Intelligence")

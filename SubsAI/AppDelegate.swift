@@ -9,24 +9,27 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 
         print("AppDelegate: Starting application")
 
-        // DO NOT hardcode client ID anymore
-        // GoogleService-Info.plist handles everything automatically
-        // This is the official, required way with GoogleSignIn 7+
-
-        // Optional: Restore previous sign-in (recommended)
+        // Restore previous sign-in FIRST
+        // Post .authRestored when complete so everything else waits for this
         GIDSignIn.sharedInstance.restorePreviousSignIn { user, error in
-            if error != nil {
-                // User not signed in or session expired
+            if let user = user {
+                print("✅ Previous sign-in restored: \(user.profile?.email ?? "unknown")")
+                // Update AuthManager state to reflect restored session
+                DispatchQueue.main.async {
+                    AuthManager.shared.handleGoogleSignIn(user: user)
+                    // Small delay to ensure state is fully propagated before API calls fire
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        NotificationCenter.default.post(name: .authRestored, object: nil)
+                    }
+                }
+            } else {
                 print("No previous sign-in to restore")
-            } else if let user = user {
-                print("Previous sign-in restored for: \(user.profile?.email ?? "unknown")")
             }
         }
 
         return true
     }
 
-    // This handles the Google Sign-In callback URL
     func application(_ app: UIApplication,
                      open url: URL,
                      options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {

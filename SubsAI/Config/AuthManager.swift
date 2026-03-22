@@ -30,6 +30,9 @@ final class AuthManager: NSObject, ObservableObject {
     private let userKey        = "subsai_user"
     private let ytConnectedKey = "subsai_yt_connected"
 
+    // Serialises token refresh — only one GTMAppAuth call in flight at a time
+    private var refreshTask: Task<String, Error>?
+
     var isSignedIn: Bool { currentUser != nil }
 
     override init() {
@@ -85,7 +88,6 @@ final class AuthManager: NSObject, ObservableObject {
         )
         currentUser = appUser
         persistUser(appUser)
-        // Google sign-in also means YouTube is connected
         setYouTubeConnected(true)
         NotificationCenter.default.post(name: .signInCompleted, object: nil)
         NotificationCenter.default.post(name: .signInGoogleCompleted, object: nil)
@@ -102,23 +104,36 @@ final class AuthManager: NSObject, ObservableObject {
         UserDefaults.standard.set(connected, forKey: ytConnectedKey)
     }
 
-    // MARK: - Get valid token (YouTube API calls)
+    // MARK: - Get valid token (serialised — only one refresh in flight at a time)
     func getValidToken() async throws -> String {
+        // If a refresh is already in flight, await it instead of firing another
+        if let existing = refreshTask {
+            return try await existing.value
+        }
+
         guard let user = GIDSignIn.sharedInstance.currentUser else {
             throw AuthError.notSignedIn
         }
-        do {
+
+        let task = Task<String, Error> {
+            defer { Task { @MainActor in self.refreshTask = nil } }
             try await user.refreshTokensIfNeeded()
+            guard let token = user.accessToken.tokenString as String? else {
+                throw AuthError.tokenExpired
+            }
+            return token
+        }
+
+        refreshTask = task
+
+        do {
+            return try await task.value
         } catch {
             throw AuthError.tokenExpired
         }
-        guard let token = user.accessToken.tokenString as String? else {
-            throw AuthError.tokenExpired
-        }
-        return token
     }
 
-    // MARK: - Set auth error (call this from anywhere)
+    // MARK: - Set auth error
     func setAuthError(_ error: AuthError) {
         authError = error
     }
@@ -128,6 +143,7 @@ final class AuthManager: NSObject, ObservableObject {
         currentUser = nil
         isYouTubeConnected = false
         authError = nil
+        refreshTask = nil
         UserDefaults.standard.removeObject(forKey: userKey)
         UserDefaults.standard.removeObject(forKey: ytConnectedKey)
         GIDSignIn.sharedInstance.signOut()
@@ -151,4 +167,5 @@ extension Notification.Name {
     static let signInGoogleCompleted = Notification.Name("signInGoogleCompleted")
     static let youtubeAccessRevoked  = Notification.Name("youtubeAccessRevoked")
     static let userSignedOut         = Notification.Name("userSignedOut")
+    static let authRestored          = Notification.Name("authRestored")
 }

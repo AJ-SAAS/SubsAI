@@ -14,17 +14,17 @@ final class HomeViewModel: ObservableObject {
     @Published var subscriberGrowth: GrowthData?
     @Published var viewGrowth: GrowthData?
     @Published var watchTimeGrowth: GrowthData?
-    // ✅ videoGrowth removed — was hardcoded fake data
 
     init() {
-        Task {
-            if AuthManager.shared.isSignedIn {
-                await loadChannelStats()
-            }
-        }
+        // No auto-load — triggered by authRestored / signIn notifications
     }
 
     func loadChannelStats() async {
+        guard AuthManager.shared.isYouTubeConnected else {
+            print("⏭ loadChannelStats skipped — YouTube not connected")
+            return
+        }
+
         isLoading = true
         errorMessage = nil
 
@@ -57,8 +57,6 @@ final class HomeViewModel: ObservableObject {
                 trend: watchHours > 0 ? .up : (watchHours < 0 ? .down : .neutral)
             )
 
-            // ✅ videoGrowth block removed entirely — was fake hardcoded numbers
-
             self.channelInfo = info
             self.lastUpdated = Date()
 
@@ -78,6 +76,7 @@ final class HomeViewModel: ObservableObject {
 
     // MARK: - Fetch latest video
     func fetchLatestVideo() async {
+        guard AuthManager.shared.isYouTubeConnected else { return }
         isLoadingLatestVideo = true
 
         do {
