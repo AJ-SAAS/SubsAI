@@ -30,7 +30,7 @@ struct SignInView: View {
                         .font(.system(size: 32, weight: .medium, design: .serif))
                         .foregroundColor(AppTheme.textPrimary)
 
-                    Text("Your YouTube growth coach.")
+                    Text("Know what to fix before your next upload.")
                         .font(.system(size: 15))
                         .foregroundColor(AppTheme.textSecondary)
                 }

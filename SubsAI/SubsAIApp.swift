@@ -1,33 +1,59 @@
-// SubsAIApp.swift
 import SwiftUI
 import GoogleSignIn
 
 @main
 struct SubsAIApp: App {
 
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @ObservedObject private var auth = AuthManager.shared
+    @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
+    @State private var showingSplash = true
+    @State private var showingAnalysis = false
 
     var body: some Scene {
         WindowGroup {
             Group {
-                if !auth.isSignedIn {
-                    // Not signed in at all
+                if showingSplash {
+                    SplashView {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            showingSplash = false
+                        }
+                    }
+                } else if !hasSeenWelcome {
+                    WelcomeView {
+                        withAnimation(.easeInOut(duration: 0.4)) {
+                            hasSeenWelcome = true
+                        }
+                    }
+                } else if !auth.isSignedIn {
                     SignInView()
                 } else if !auth.isYouTubeConnected {
-                    // Signed in but YouTube not connected (Apple sign-in users)
                     ConnectYouTubeView()
+                } else if showingAnalysis {
+                    AnalysisLoadingView {
+                        withAnimation(.easeInOut(duration: 0.4)) {
+                            showingAnalysis = false
+                        }
+                    }
                 } else {
-                    // Fully set up
                     MainTabView()
                 }
             }
-            .animation(.easeInOut(duration: 0.3), value: auth.isSignedIn)
-            .animation(.easeInOut(duration: 0.3), value: auth.isYouTubeConnected)
+            .animation(.easeInOut(duration: 0.35), value: showingSplash)
+            .animation(.easeInOut(duration: 0.35), value: hasSeenWelcome)
+            .animation(.easeInOut(duration: 0.35), value: auth.isSignedIn)
+            .animation(.easeInOut(duration: 0.35), value: auth.isYouTubeConnected)
+            .animation(.easeInOut(duration: 0.35), value: showingAnalysis)
             .onOpenURL { url in
                 GIDSignIn.sharedInstance.handle(url)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .signInGoogleCompleted)) { _ in
+                if !showingAnalysis {
+                    withAnimation { showingAnalysis = true }
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .userSignedOut)) { _ in
-                // State change handled by @Published properties
+                showingAnalysis = false
             }
         }
     }
