@@ -26,9 +26,11 @@ final class AuthManager: NSObject, ObservableObject {
     @Published var isYouTubeConnected: Bool = false
     @Published var isLoading: Bool = false
     @Published var authError: AuthError?
+    @Published var isDemoMode: Bool = false   // ← NEW for demo
 
     private let userKey        = "subsai_user"
     private let ytConnectedKey = "subsai_yt_connected"
+    private let demoModeKey    = "subsai_demo_mode"   // ← NEW
 
     // Serialises token refresh — only one GTMAppAuth call in flight at a time
     private var refreshTask: Task<String, Error>?
@@ -39,6 +41,7 @@ final class AuthManager: NSObject, ObservableObject {
         super.init()
         loadPersistedUser()
         isYouTubeConnected = UserDefaults.standard.bool(forKey: ytConnectedKey)
+        isDemoMode = UserDefaults.standard.bool(forKey: demoModeKey)   // ← NEW
     }
 
     // MARK: - Persist / load user
@@ -104,9 +107,27 @@ final class AuthManager: NSObject, ObservableObject {
         UserDefaults.standard.set(connected, forKey: ytConnectedKey)
     }
 
+    // MARK: - NEW: Demo Mode Support
+    func enterDemoMode() {
+        isDemoMode = true
+        UserDefaults.standard.set(true, forKey: demoModeKey)
+        setYouTubeConnected(true)
+        
+        if currentUser == nil {
+            currentUser = AppUser(
+                id: "demo-user",
+                provider: .google,
+                displayName: "Demo Creator",
+                email: "demo@subsai.app"
+            )
+            persistUser(currentUser!)
+        }
+        
+        NotificationCenter.default.post(name: .signInGoogleCompleted, object: nil)
+    }
+
     // MARK: - Get valid token (serialised — only one refresh in flight at a time)
     func getValidToken() async throws -> String {
-        // If a refresh is already in flight, await it instead of firing another
         if let existing = refreshTask {
             return try await existing.value
         }
@@ -142,10 +163,12 @@ final class AuthManager: NSObject, ObservableObject {
     func signOut() {
         currentUser = nil
         isYouTubeConnected = false
+        isDemoMode = false                    // ← NEW
         authError = nil
         refreshTask = nil
         UserDefaults.standard.removeObject(forKey: userKey)
         UserDefaults.standard.removeObject(forKey: ytConnectedKey)
+        UserDefaults.standard.removeObject(forKey: demoModeKey)   // ← NEW
         GIDSignIn.sharedInstance.signOut()
         NotificationCenter.default.post(name: .userSignedOut, object: nil)
     }

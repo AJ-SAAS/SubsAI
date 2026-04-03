@@ -8,8 +8,90 @@ final class YouTubeService {
     static let shared = YouTubeService()
     private init() {}
 
+    // MARK: - Mock Data for Demo Account (Apple Review + Testing)
+    private func mockChannel() -> Channel {
+        Channel(
+            id: "UCdemoTechGrowth2026",
+            name: "TechGrowth Daily",
+            subscribers: 124800,
+            totalViews: 4520000,
+            watchTime: 18420,
+            videoCount: 87,
+            thumbnailCTR: 0.062,
+            profilePicURL: "https://picsum.photos/id/1015/300/300",
+            bannerURL: nil
+        )
+    }
+
+    private func mockVideos() -> [Video] {
+        let now = Date()
+        return [
+            Video(
+                videoId: "demo1",
+                title: "I Tried the New YouTube Algorithm for 30 Days – Here’s What Happened",
+                publishedAt: now.addingTimeInterval(-86400 * 4),
+                views: 42800,
+                watchTime: 12400,
+                thumbnailCTR: 0.078,
+                averageViewDuration: 142,
+                dropOffSecond: 18,
+                analytics: VideoAnalytics(ctr: 0.078, averageViewDuration: 142, retention: 0.48, expectedViews: 52000, subscribersGained: 1240)
+            ),
+            Video(
+                videoId: "demo2",
+                title: "How to Get 10x More Views with Better Thumbnails (2026 Update)",
+                publishedAt: now.addingTimeInterval(-86400 * 11),
+                views: 67300,
+                watchTime: 18900,
+                thumbnailCTR: 0.091,
+                averageViewDuration: 98,
+                dropOffSecond: 12,
+                analytics: VideoAnalytics(ctr: 0.091, averageViewDuration: 98, retention: 0.55, expectedViews: 58000, subscribersGained: 890)
+            ),
+            Video(
+                videoId: "demo3",
+                title: "Why Your Retention Drops at 47 Seconds (and How to Fix It)",
+                publishedAt: now.addingTimeInterval(-86400 * 19),
+                views: 21900,
+                watchTime: 6700,
+                thumbnailCTR: 0.044,
+                averageViewDuration: 67,
+                dropOffSecond: 47,
+                analytics: VideoAnalytics(ctr: 0.044, averageViewDuration: 67, retention: 0.31, expectedViews: 35000, subscribersGained: 320)
+            ),
+            Video(
+                videoId: "demo4",
+                title: "7 Thumbnail Mistakes Killing Your CTR Right Now",
+                publishedAt: now.addingTimeInterval(-86400 * 26),
+                views: 35100,
+                watchTime: 9800,
+                thumbnailCTR: 0.067,
+                averageViewDuration: 115,
+                dropOffSecond: 22,
+                analytics: VideoAnalytics(ctr: 0.067, averageViewDuration: 115, retention: 0.42, expectedViews: 41000, subscribersGained: 610)
+            )
+        ]
+    }
+
+    private func mockPeriodAnalytics(_ period: TimePeriod) -> (views: Int, watchHours: Double, netSubs: Int) {
+        switch period {
+        case .week:    return (12400, 620, 340)
+        case .month:   return (48700, 2480, 920)
+        case .quarter: return (142000, 7100, 2150)
+        }
+    }
+
+    // Public helper for demo
+    func demoVideos() -> [Video] {
+        mockVideos()
+    }
+
     // MARK: - Channel Info
     func fetchChannel() async throws -> Channel {
+        if AuthManager.shared.isDemoMode {
+            return mockChannel()
+        }
+        
         let token = try await AuthManager.shared.getValidToken()
 
         var components = URLComponents(
@@ -80,6 +162,10 @@ final class YouTubeService {
 
     // MARK: - Period Analytics
     func fetchPeriodAnalytics(_ period: TimePeriod) async throws -> (views: Int, watchHours: Double, netSubs: Int) {
+        if AuthManager.shared.isDemoMode {
+            return mockPeriodAnalytics(period)
+        }
+        
         let token = try await AuthManager.shared.getValidToken()
 
         let end = Date()

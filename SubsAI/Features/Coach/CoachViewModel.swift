@@ -2,8 +2,7 @@
 import Foundation
 import SwiftUI
 
-// MARK: - API Models
-
+// MARK: - API Models (unchanged)
 struct ChannelListResponse: Codable {
     let items: [ChannelItem]
 
@@ -43,7 +42,7 @@ struct AnalyticsReportResponse: Codable {
     let rows: [[AnalyticsValue]]?
 }
 
-// MARK: - Posting Time Insight
+// MARK: - Posting Time Insight (unchanged)
 struct PostingTimeInsight {
     let bestDay: String
     let bestDayAvgViews: Int
@@ -80,7 +79,7 @@ struct PostingTimeInsight {
     }
 }
 
-// MARK: - Channel Diagnosis
+// MARK: - Channel Diagnosis (unchanged)
 struct ChannelDiagnosis {
     let headline: String
     let body: String
@@ -159,11 +158,9 @@ final class CoachViewModel: ObservableObject {
     @Published var intelligenceReport: ChannelIntelligenceReport?
     @Published var postingTimeInsight: PostingTimeInsight?
 
-    // autoLoad: false prevents concurrent token refreshes on cold launch
     init(autoLoad: Bool = true) {
         if autoLoad {
             Task {
-                // Let AppDelegate finish restoring previous sign-in first
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 await loadVideos()
             }
@@ -171,7 +168,6 @@ final class CoachViewModel: ObservableObject {
     }
 
     func loadVideos() async {
-        // Don't attempt a network call if YouTube isn't connected yet
         guard AuthManager.shared.isYouTubeConnected else {
             print("⏭ loadVideos skipped — YouTube not connected")
             return
@@ -181,6 +177,22 @@ final class CoachViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
+            if AuthManager.shared.isDemoMode {
+                // DEMO PATH — rich mock data
+                self.videos = YouTubeService.shared.demoVideos()
+                self.latestVideo = self.videos.first
+                
+                try? await Task.sleep(nanoseconds: 600_000_000) // pleasant loading feel
+                
+                self.diagnosis          = ChannelDiagnosis.generate(from: self.videos)
+                self.intelligenceReport = ChannelIntelligenceReport.generate(from: self.videos)
+                self.postingTimeInsight = analyzePostingTimes()
+                
+                print("✅ Demo mode: Loaded \(videos.count) mock videos")
+                return
+            }
+
+            // REAL PATH — completely unchanged
             let token = try await AuthManager.shared.getValidToken()
             let uploadsPlaylistId = try await fetchUploadsPlaylist(accessToken: token)
             let baseVideos = try await fetchAllPlaylistVideos(
@@ -211,7 +223,7 @@ final class CoachViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Posting Time Analysis
+    // MARK: - Posting Time Analysis (unchanged)
     func analyzePostingTimes() -> PostingTimeInsight? {
         let videosWithViews = videos.filter { $0.views > 0 }
         guard videosWithViews.count >= 4 else { return nil }
@@ -250,7 +262,7 @@ final class CoachViewModel: ObservableObject {
         )
     }
 
-    // MARK: - Uploads Playlist ID
+    // MARK: - Uploads Playlist ID (unchanged)
     private func fetchUploadsPlaylist(accessToken: String) async throws -> String {
         let url = URL(string:
             "https://www.googleapis.com/youtube/v3/channels?part=contentDetails&mine=true"
@@ -264,7 +276,7 @@ final class CoachViewModel: ObservableObject {
         return uploads
     }
 
-    // MARK: - Playlist Videos (Paginated)
+    // MARK: - Playlist Videos (Paginated) (unchanged)
     private func fetchAllPlaylistVideos(
         playlistId: String,
         accessToken: String
@@ -313,7 +325,7 @@ final class CoachViewModel: ObservableObject {
         return allVideos
     }
 
-    // MARK: - Analytics Enrichment
+    // MARK: - Analytics Enrichment (unchanged)
     private func enrichWithAnalytics(accessToken: String) async {
         let endDate   = Date().youtubeAnalyticsDateString()
         let startDate = Calendar.current

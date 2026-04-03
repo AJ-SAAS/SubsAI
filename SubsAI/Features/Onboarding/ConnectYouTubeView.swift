@@ -69,7 +69,7 @@ struct ConnectYouTubeView: View {
                             } else {
                                 Image(systemName: "globe")
                                     .font(.system(size: 15))
-                                Text("Connect with Google")
+                                Text("Connect YouTube Channel")
                                     .font(.system(size: 15, weight: .medium))
                             }
                         }
@@ -82,15 +82,25 @@ struct ConnectYouTubeView: View {
                     .disabled(isConnecting)
                     .padding(.horizontal, 32)
 
+                    // UPDATED: Better text + blue color
+                    Button("Skip and Use Demo Account") {
+                        AuthManager.shared.enterDemoMode()
+                    }
+                    .font(.system(size: 13))
+                    .foregroundColor(AppTheme.accent)      // ← Changed to blue/accent
+                    .padding(.top, 8)
+
+                    // UPDATED: Sign out button also blue for consistency
                     Button {
                         AuthManager.shared.signOut()
                     } label: {
                         Text("Sign out")
                             .font(.system(size: 13))
-                            .foregroundColor(AppTheme.textTertiary)
+                            .foregroundColor(AppTheme.accent)   // ← Changed to blue/accent
                     }
                 }
 
+                // Optional error message
                 if let error = errorMessage {
                     Text(error)
                         .font(.system(size: 12))
@@ -99,6 +109,12 @@ struct ConnectYouTubeView: View {
                         .padding(.horizontal, 32)
                         .padding(.top, 8)
                 }
+
+                // Optional note
+                Text("You can disconnect anytime in settings.")
+                    .font(.system(size: 11))
+                    .foregroundColor(AppTheme.textTertiary)
+                    .padding(.top, 4)
 
                 Spacer()
             }
@@ -156,4 +172,9 @@ struct ConnectYouTubeView: View {
             }
         }
     }
+}
+
+// MARK: - Preview
+#Preview {
+    ConnectYouTubeView()
 }

@@ -10,7 +10,7 @@ struct ContentView: View {
             if auth.isSignedIn {
                 MainTabView()
             } else {
-                OnboardingView()
+                SignInView()
             }
         }
         // Alert for authentication errors from AuthManager

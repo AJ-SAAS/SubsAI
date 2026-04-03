@@ -71,6 +71,29 @@ struct SignInView: View {
                         )
                     }
                     .disabled(isLoading)
+
+                    // NEW: Demo Account button (safe, uses same style)
+                    Button {
+                        continueWithDemoAccount()
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 16))
+                                .foregroundColor(AppTheme.accent)
+                            Text("Continue with Demo Account")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(AppTheme.textPrimary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(AppTheme.cardBackground)
+                        .cornerRadius(14)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(AppTheme.borderSubtle, lineWidth: 0.5)
+                        )
+                    }
+                    .disabled(isLoading)
                 }
                 .padding(.horizontal, 32)
 
@@ -129,5 +152,10 @@ struct SignInView: View {
                 AuthManager.shared.handleGoogleSignIn(user: user)
             }
         }
+    }
+
+    // NEW: Demo account entry (very safe)
+    private func continueWithDemoAccount() {
+        AuthManager.shared.enterDemoMode()
     }
 }

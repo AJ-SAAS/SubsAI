@@ -68,11 +68,18 @@ struct SettingsView: View {
                     // MARK: - Legal
                     Section {
                         Link("Privacy Policy",
-                             destination: URL(string: "https://subsai.app/privacy")!)
+                             destination: URL(string: "https://www.trysubsai.com/r/privacy")!)
                         Link("Terms of Use",
-                             destination: URL(string: "https://subsai.app/terms")!)
+                             destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
+                        Button {
+                            if let url = URL(string: "mailto:gridking111@gmail.com") {
+                                UIApplication.shared.open(url)
+                            }
+                        } label: {
+                            Text("Contact Support")
+                        }
                     } header: {
-                        Text("Legal")
+                        Text("Legal & Support")
                     }
 
                     // MARK: - Sign out / delete
