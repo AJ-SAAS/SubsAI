@@ -79,7 +79,7 @@ private func analyzePatterns(current: Video, all: [Video]) -> ChannelPattern? {
         bottomPattern = "Your bottom \(botVideos.count) videos average \(Int(avgBotRetention * 100))% retention — significantly below your channel average."
     }
 
-    // MARK: Study video — highest performer most unlike current
+    // MARK: Study video
     let avgRetention = videosWithData.compactMap { $0.analytics?.retention }.reduce(0, +) / Double(videosWithData.count)
 
     let studyVideo = sorted.first(where: { $0.id != current.id }) ?? sorted[0]
@@ -132,14 +132,15 @@ struct VideoCompareView: View {
                     emptyState
                 } else {
 
-                    // MARK: - Auto-generated insights (replaces "look at what they have in common")
                     if let p = pattern {
                         sectionLabel("What your data says")
+                            .padding(.bottom, 2)
                         autoInsightSection(p)
                     }
 
-                    // MARK: - Video list (supporting evidence)
                     sectionLabel("Your videos · sorted by retention")
+                        .padding(.bottom, 2)
+
                     VStack(spacing: 10) {
                         ForEach(sortedVideos) { video in
                             VideoCompareRow(
@@ -162,14 +163,12 @@ struct VideoCompareView: View {
     @ViewBuilder
     private func autoInsightSection(_ p: ChannelPattern) -> some View {
 
-        // Top pattern
         InsightBlock(
             title: "What your best videos have in common",
             content: p.topPattern,
             accentColor: .green
         )
 
-        // Bottom pattern
         if !p.bottomPattern.isEmpty {
             InsightBlock(
                 title: "What your weakest videos have in common",
@@ -178,32 +177,26 @@ struct VideoCompareView: View {
             )
         }
 
-        // The one video to study
+        // Updated Study Card
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(AppTheme.accent)
-                    .frame(width: 5, height: 5)
-                Text("Study this one")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(AppTheme.accent)
-                    .kerning(1.0)
-                    .textCase(.uppercase)
-            }
+
+            Text("Study this video")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(AppTheme.accent)
 
             Text("\"\(p.studyVideo.title)\"")
-                .font(.system(size: 14, weight: .medium, design: .serif))
+                .font(.system(size: 15, weight: .medium, design: .serif))
                 .foregroundColor(AppTheme.textPrimary)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(p.studyReason)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundColor(AppTheme.textSecondary)
                 .lineSpacing(3)
 
             Text("Watch the first 60 seconds of this video back-to-back with your current one. The difference in how they open is almost always where the retention gap comes from.")
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundColor(AppTheme.textSecondary)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -211,16 +204,11 @@ struct VideoCompareView: View {
             NavigationLink {
                 CoachReviewView(video: p.studyVideo, allVideos: allVideos)
             } label: {
-                HStack(spacing: 5) {
-                    Text("Review this video in Coach")
-                        .font(.system(size: 12))
-                        .foregroundColor(AppTheme.accent)
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 11))
-                        .foregroundColor(AppTheme.accent)
-                }
+                Text("Review in Coach →")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(AppTheme.accent)
             }
-            .padding(.top, 2)
+            .padding(.top, 4)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -231,7 +219,6 @@ struct VideoCompareView: View {
                 .stroke(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
         )
 
-        // Channel average context
         if avgRetention > 0 {
             InsightBlock(
                 title: "Your channel average",
@@ -241,7 +228,6 @@ struct VideoCompareView: View {
         }
     }
 
-    // MARK: - Empty state
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "video.slash")
@@ -255,11 +241,11 @@ struct VideoCompareView: View {
         .padding(.vertical, 30)
     }
 
+    // ✅ UPDATED SECTION LABEL
     private func sectionLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .medium))
-            .foregroundColor(AppTheme.textSecondary)
-            .kerning(0.8)
+        Text(text)
+            .font(.system(size: 16, weight: .semibold, design: .serif))
+            .foregroundColor(AppTheme.textPrimary)
     }
 }
 
@@ -279,7 +265,6 @@ struct VideoCompareRow: View {
         return .red
     }
 
-    // Show whether this video is above or below channel average
     private var vsAvgText: String? {
         guard avgRetention > 0 else { return nil }
         let diff = retention - avgRetention
@@ -319,11 +304,11 @@ struct VideoCompareRow: View {
                         .font(.system(size: 20, weight: .medium, design: .serif))
                         .foregroundColor(scoreColor)
                     Text("retention")
-                        .font(.system(size: 9))
+                        .font(.system(size: 10))
                         .foregroundColor(AppTheme.textTertiary)
                     if let vsAvg = vsAvgText {
                         Text(vsAvg)
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: 10, weight: .medium))
                             .foregroundColor(vsAvgColor)
                     }
                 }

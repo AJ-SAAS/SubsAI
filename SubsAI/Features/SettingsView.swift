@@ -72,7 +72,7 @@ struct SettingsView: View {
                         Link("Terms of Use",
                              destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
                         Button {
-                            if let url = URL(string: "mailto:gridking111@gmail.com") {
+                            if let url = URL(string: "mailto:support@trysubsai.com") {
                                 UIApplication.shared.open(url)
                             }
                         } label: {

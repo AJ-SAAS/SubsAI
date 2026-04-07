@@ -10,6 +10,7 @@ struct RetentionCurveView: View {
 
                 // MARK: - Curve chart
                 sectionLabel("Viewer retention · full video")
+                    .padding(.bottom, 2)
 
                 RetentionChartView(
                     curve: analysis.retentionCurve,
@@ -18,14 +19,19 @@ struct RetentionCurveView: View {
                 )
                 .frame(height: 220)
                 .padding(16)
-                .background(Color(.secondarySystemBackground))
+                .background(AppTheme.cardBackground)
                 .cornerRadius(16)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(AppTheme.borderSubtle, lineWidth: 0.5)
+                )
 
                 // Drop-off pills
                 dropOffPills
 
                 // MARK: - Drop-off diagnosis
                 sectionLabel("Drop-off diagnosis")
+                    .padding(.bottom, 2)
 
                 ForEach(Array(analysis.dropOffPoints.enumerated()), id: \.element.id) { index, drop in
                     InsightBlock(
@@ -36,10 +42,11 @@ struct RetentionCurveView: View {
                 }
 
                 // MARK: - Pattern insight
-                sectionLabel("Pattern vs your other videos")
+                sectionLabel("What works on your channel")
+                    .padding(.bottom, 2)
 
                 InsightBlock(
-                    title: "What works for you",
+                    title: "What keeps people watching",
                     content: "Your 3 best-retaining videos all share one thing: a conflict introduced before minute 1. \"Here's what almost went wrong\" keeps people watching more than any other pattern in your library.",
                     accentColor: .green
                 )
@@ -57,20 +64,18 @@ struct RetentionCurveView: View {
             HStack(spacing: 8) {
                 ForEach(analysis.dropOffPoints) { drop in
                     Text(dropPillLabel(drop))
-                        .font(.caption)
-                        .fontWeight(.medium)
+                        .font(.system(size: 12, weight: .medium))
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 5)
+                        .padding(.vertical, 6)
                         .background(dropOffColor(drop).opacity(0.12))
                         .foregroundColor(dropOffColor(drop))
                         .cornerRadius(20)
                 }
 
                 Text("Strong 0–2 min")
-                    .font(.caption)
-                    .fontWeight(.medium)
+                    .font(.system(size: 12, weight: .medium))
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 5)
+                    .padding(.vertical, 6)
                     .background(Color.green.opacity(0.12))
                     .foregroundColor(.green)
                     .cornerRadius(20)
@@ -78,15 +83,14 @@ struct RetentionCurveView: View {
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - Section Label (UPDATED SYSTEM)
     private func sectionLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.caption2)
-            .fontWeight(.medium)
-            .foregroundColor(.secondary)
-            .kerning(0.8)
+        Text(text)
+            .font(.system(size: 16, weight: .semibold, design: .serif))
+            .foregroundColor(AppTheme.textPrimary)
     }
 
+    // MARK: - Helpers
     private func dropPillLabel(_ drop: DropOffPoint) -> String {
         let pct = Int(drop.elapsedTimeRatio * 100)
         switch drop.severity {
@@ -121,25 +125,28 @@ struct RetentionCurveView: View {
     }
 }
 
-// MARK: - Retention Chart (pure SwiftUI, no external libs)
+// MARK: - Retention Chart
 struct RetentionChartView: View {
     let curve: [RetentionDataPoint]
     let channelAvg: [RetentionDataPoint]
     let dropOffs: [DropOffPoint]
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
+
             // Legend
             HStack(spacing: 16) {
                 legendItem(color: .purple, label: "This video")
                 legendItem(color: .gray.opacity(0.5), label: "Your avg")
                 Spacer()
             }
-            .font(.caption)
+            .font(.system(size: 12))
+            .padding(.bottom, 4)
 
             // Chart
             GeometryReader { geo in
                 ZStack {
+
                     // Grid lines
                     ForEach([0.25, 0.50, 0.75, 1.0], id: \.self) { level in
                         let y = geo.size.height * (1 - level)
@@ -150,22 +157,23 @@ struct RetentionChartView: View {
                         .stroke(Color.gray.opacity(0.1), style: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
                     }
 
-                    // Channel avg line (dashed)
+                    // Channel avg line
                     curvePath(points: channelAvg, in: geo)
                         .stroke(Color.gray.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
 
-                    // Fill under this video's curve
+                    // Area fill
                     curveAreaPath(points: curve, in: geo)
                         .fill(Color.purple.opacity(0.08))
 
-                    // This video's curve
+                    // Main curve
                     curvePath(points: curve, in: geo)
                         .stroke(Color.purple, style: StrokeStyle(lineWidth: 2, lineCap: .round))
 
-                    // Drop-off markers
+                    // Drop markers
                     ForEach(dropOffs) { drop in
                         let x = geo.size.width * drop.elapsedTimeRatio
                         let y = yPosition(for: drop.elapsedTimeRatio, in: geo)
+
                         Circle()
                             .fill(Color.red)
                             .frame(width: 8, height: 8)
@@ -174,33 +182,40 @@ struct RetentionChartView: View {
                 }
             }
 
-            // X axis labels
+            // X axis
             HStack {
-                Text("0%").font(.caption2).foregroundColor(.secondary)
+                Text("0%").font(.system(size: 11)).foregroundColor(.secondary)
                 Spacer()
-                Text("50%").font(.caption2).foregroundColor(.secondary)
+                Text("50%").font(.system(size: 11)).foregroundColor(.secondary)
                 Spacer()
-                Text("100%").font(.caption2).foregroundColor(.secondary)
+                Text("100%").font(.system(size: 11)).foregroundColor(.secondary)
             }
         }
     }
 
     private func legendItem(color: Color, label: String) -> some View {
         HStack(spacing: 4) {
-            Circle().fill(color).frame(width: 7, height: 7)
-            Text(label).foregroundColor(.secondary)
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
+
+            Text(label)
+                .foregroundColor(AppTheme.textSecondary)
         }
     }
 
     private func curvePath(points: [RetentionDataPoint], in geo: GeometryProxy) -> Path {
         Path { path in
             guard !points.isEmpty else { return }
+
             let sorted = points.sorted { $0.elapsedTimeRatio < $1.elapsedTimeRatio }
+
             let first = sorted[0]
             path.move(to: CGPoint(
                 x: geo.size.width * first.elapsedTimeRatio,
                 y: geo.size.height * (1 - first.audienceWatchRatio)
             ))
+
             for point in sorted.dropFirst() {
                 path.addLine(to: CGPoint(
                     x: geo.size.width * point.elapsedTimeRatio,
@@ -213,14 +228,18 @@ struct RetentionChartView: View {
     private func curveAreaPath(points: [RetentionDataPoint], in geo: GeometryProxy) -> Path {
         Path { path in
             guard !points.isEmpty else { return }
+
             let sorted = points.sorted { $0.elapsedTimeRatio < $1.elapsedTimeRatio }
+
             path.move(to: CGPoint(x: 0, y: geo.size.height))
+
             for point in sorted {
                 path.addLine(to: CGPoint(
                     x: geo.size.width * point.elapsedTimeRatio,
                     y: geo.size.height * (1 - point.audienceWatchRatio)
                 ))
             }
+
             path.addLine(to: CGPoint(x: geo.size.width, y: geo.size.height))
             path.closeSubpath()
         }
@@ -228,8 +247,13 @@ struct RetentionChartView: View {
 
     private func yPosition(for ratio: Double, in geo: GeometryProxy) -> CGFloat {
         let sorted = curve.sorted { $0.elapsedTimeRatio < $1.elapsedTimeRatio }
-        let closest = sorted.min(by: { abs($0.elapsedTimeRatio - ratio) < abs($1.elapsedTimeRatio - ratio) })
+
+        let closest = sorted.min {
+            abs($0.elapsedTimeRatio - ratio) < abs($1.elapsedTimeRatio - ratio)
+        }
+
         let retention = closest?.audienceWatchRatio ?? 0.5
+
         return geo.size.height * (1 - retention)
     }
 }

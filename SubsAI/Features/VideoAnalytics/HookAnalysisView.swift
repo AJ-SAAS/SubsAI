@@ -56,13 +56,11 @@ struct HookAnalysisView: View {
     private func hookVerdictCard(_ segment: HookSegment) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("What happened here")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(AppTheme.textTertiary)
-                .kerning(0.6)
-                .textCase(.uppercase)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(AppTheme.textPrimary)
             Text(hookVerdictText(for: segment))
                 .font(.system(size: 13))
-                .foregroundColor(AppTheme.textSecondary)
+                .foregroundColor(AppTheme.textPrimary)
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -96,9 +94,9 @@ struct HookAnalysisView: View {
                     .cornerRadius(8)
             }
             Text("We'll look at how your video starts, find the weak spot, and write you a stronger opening line — based on what's already working on your channel.")
-                .font(.system(size: 12))
-                .foregroundColor(AppTheme.textSecondary)
-                .lineSpacing(3)
+                .font(.system(size: 13))
+                .foregroundColor(AppTheme.textPrimary)
+                .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
@@ -112,10 +110,9 @@ struct HookAnalysisView: View {
 
     // MARK: - Helpers
     private func sectionLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .medium))
-            .foregroundColor(AppTheme.textSecondary)
-            .kerning(0.8)
+        Text(text)
+            .font(.system(size: 16, weight: .semibold, design: .serif))
+            .foregroundColor(AppTheme.textPrimary)
     }
 
     private func hookVerdictText(for segment: HookSegment) -> String {
@@ -219,15 +216,14 @@ struct InsightBlock: View {
     let accentColor: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .medium))
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(accentColor)
-                .kerning(0.6)
 
             Text(content)
                 .font(.system(size: 13))
-                .foregroundColor(AppTheme.textSecondary)
+                .foregroundColor(AppTheme.textPrimary)
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
         }

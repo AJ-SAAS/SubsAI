@@ -199,7 +199,6 @@ struct CoachReviewView: View {
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
 
-            // Uses passed vm — never creates a new CoachViewModel
             if isPattern, let vm = vm {
                 NavigationLink {
                     IntelligenceView(vm: vm)
@@ -299,11 +298,10 @@ struct CoachReviewView: View {
             HStack(spacing: 5) {
                 Circle()
                     .fill(cardColor)
-                    .frame(width: 5, height: 5)
-                Text(label.uppercased())
-                    .font(.system(size: 10, weight: .medium))
+                    .frame(width: 6, height: 6)
+                Text(label)
+                    .font(.system(size: 16, weight: .semibold, design: .serif))
                     .foregroundColor(cardColor)
-                    .kerning(1.0)
             }
 
             Text(verdictText)
@@ -400,7 +398,6 @@ struct CoachReviewView: View {
                     )
                 }
 
-                // Posting time row — only shown if video was posted on a suboptimal day
                 if let line = postingTimeLine {
                     ReviewMetricRow(
                         name: "Posting time",
@@ -509,15 +506,13 @@ struct CoachReviewView: View {
         let wins = workingWell
         if !wins.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 5) {
+                HStack(spacing: 6) {
                     Circle()
                         .fill(Color.green)
-                        .frame(width: 5, height: 5)
+                        .frame(width: 6, height: 6)
                     Text("What's working")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 16, weight: .semibold, design: .serif))
                         .foregroundColor(.green)
-                        .kerning(1.0)
-                        .textCase(.uppercase)
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -526,11 +521,11 @@ struct CoachReviewView: View {
                             Image(systemName: "checkmark")
                                 .font(.system(size: 10, weight: .semibold))
                                 .foregroundColor(.green)
-                                .padding(.top, 2)
+                                .padding(.top, 3)
                             Text(win)
-                                .font(.system(size: 12))
-                                .foregroundColor(AppTheme.textSecondary)
-                                .lineSpacing(3)
+                                .font(.system(size: 14))
+                                .foregroundColor(AppTheme.textPrimary)
+                                .lineSpacing(4)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -640,19 +635,21 @@ struct ReviewMetricRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
+                // Metric name — larger, primary color, readable in both modes
                 Text(name.uppercased())
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(AppTheme.textTertiary)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(AppTheme.textPrimary)
                     .kerning(0.6)
 
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 2) {
+                    // Stat number — larger and bolder so it reads as the hero
                     Text(value)
-                        .font(.system(size: 20, weight: .medium, design: .serif))
+                        .font(.system(size: 28, weight: .semibold, design: .serif))
                         .foregroundColor(AppTheme.textPrimary)
                     Text(benchmark)
-                        .font(.system(size: 10))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundColor(isGood ? .green : .red)
                 }
             }
@@ -674,9 +671,9 @@ struct ReviewMetricRow: View {
             .frame(height: 4)
 
             Text(explanation)
-                .font(.system(size: 12))
-                .foregroundColor(AppTheme.textSecondary)
-                .lineSpacing(3)
+                .font(.system(size: 13))
+                .foregroundColor(AppTheme.textPrimary)
+                .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)

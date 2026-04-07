@@ -63,10 +63,8 @@ struct CoachView: View {
 
                             HStack {
                                 Text("Your videos")
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundColor(AppTheme.textSecondary)
-                                    .kerning(1.0)
-                                    .textCase(.uppercase)
+                                    .font(.system(size: 16, weight: .semibold, design: .serif))
+                                    .foregroundColor(AppTheme.textPrimary)
 
                                 Spacer()
 

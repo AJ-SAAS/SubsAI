@@ -29,12 +29,12 @@ struct VideoDeepAnalysisView: View {
                 // MARK: - Video header
                 VStack(alignment: .leading, spacing: 4) {
                     Text(video.title)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(size: 16, weight: .medium, design: .serif))
                         .foregroundColor(AppTheme.textPrimary)
                         .lineLimit(2)
                     Text(videoMetaText)
                         .font(.system(size: 12))
-                        .foregroundColor(AppTheme.textTertiary)
+                        .foregroundColor(AppTheme.textSecondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 20)

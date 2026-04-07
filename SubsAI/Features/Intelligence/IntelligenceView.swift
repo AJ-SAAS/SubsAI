@@ -207,8 +207,8 @@ struct IntelligenceView: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 13, weight: .medium))
-            .foregroundColor(AppTheme.textSecondary)
+            .font(.system(size: 16, weight: .semibold, design: .serif))
+            .foregroundColor(AppTheme.textPrimary)
     }
 
     private func loadSafely() async {
