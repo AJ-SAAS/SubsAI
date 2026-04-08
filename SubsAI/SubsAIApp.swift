@@ -1,5 +1,6 @@
 import SwiftUI
 import GoogleSignIn
+import FirebaseCore     // ← Added for App Check
 
 @main
 struct SubsAIApp: App {
@@ -9,6 +10,10 @@ struct SubsAIApp: App {
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
     @State private var showingSplash = true
     @State private var showingAnalysis = false
+
+    init() {
+        FirebaseApp.configure()   // ← Added (required for App Check)
+    }
 
     var body: some Scene {
         WindowGroup {
