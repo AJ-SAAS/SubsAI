@@ -1,5 +1,6 @@
 // Features/Dashboard/DashboardView.swift
 import SwiftUI
+import StoreKit   // ← Added for App Store review request
 
 struct DashboardView: View {
     @StateObject private var vm = HomeViewModel()
@@ -7,6 +8,10 @@ struct DashboardView: View {
     @State private var showGoalSheet = false
     @State private var customGoals: [(GoalType, Int)] = []
     @State private var authErrorMessage: String?
+
+    // MARK: - Review Request
+    @Environment(\.requestReview) private var requestReview
+    @AppStorage("hasRequestedReviewAfterConnect") private var hasRequestedReviewAfterConnect = false
 
     private let subsMilestones = [
         1_000, 5_000, 10_000, 25_000, 50_000,
@@ -111,6 +116,17 @@ struct DashboardView: View {
         .onAppear {
             // Safe — loadChannelStats guards on isYouTubeConnected internally
             Task { await vm.loadChannelStats() }
+            
+            // NEW: Request App Store review ~60 seconds after landing on dashboard
+            // (Only once after first YouTube connection)
+            if !hasRequestedReviewAfterConnect {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+                    requestReview()
+                    
+                    // Mark as shown so it doesn't trigger again
+                    hasRequestedReviewAfterConnect = true
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .authRestored)) { _ in
             Task { await vm.loadChannelStats() }
