@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		9269DDD62F8A723200C17846 /* RevenueCatUI in Frameworks */ = {isa = PBXBuildFile; productRef = 9269DDD52F8A723200C17846 /* RevenueCatUI */; };
+		9269DDDD2F8A967D00C17846 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = 9269DDDC2F8A967D00C17846 /* RevenueCat */; };
 		927ABD432EDEE35F005812CB /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 927ABD422EDEE35F005812CB /* GoogleSignIn */; };
 		927ABD452EDEE35F005812CB /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 927ABD442EDEE35F005812CB /* GoogleSignInSwift */; };
 		927F61D22F5C657900F7C98D /* GoogleAPIClientForREST_YouTube in Frameworks */ = {isa = PBXBuildFile; productRef = 927F61D12F5C657900F7C98D /* GoogleAPIClientForREST_YouTube */; };
@@ -81,10 +83,12 @@
 				927ABD432EDEE35F005812CB /* GoogleSignIn in Frameworks */,
 				927F61D42F5C657900F7C98D /* GoogleAPIClientForREST_YouTubeAnalytics in Frameworks */,
 				92CC2D572E2F82720008B48C /* FirebaseAuth in Frameworks */,
+				9269DDDD2F8A967D00C17846 /* RevenueCat in Frameworks */,
 				92CC2D5D2E2F82720008B48C /* FirebaseStorage in Frameworks */,
 				927ABD452EDEE35F005812CB /* GoogleSignInSwift in Frameworks */,
 				927F61D22F5C657900F7C98D /* GoogleAPIClientForREST_YouTube in Frameworks */,
 				92CC2D592E2F82720008B48C /* FirebaseAuthCombine-Community in Frameworks */,
+				9269DDD62F8A723200C17846 /* RevenueCatUI in Frameworks */,
 				92CC2D5B2E2F82720008B48C /* FirebaseFirestore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -106,12 +110,20 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		9269DDDB2F8A967D00C17846 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		92CC2D202E2E9EA50008B48C = {
 			isa = PBXGroup;
 			children = (
 				92CC2D2B2E2E9EA50008B48C /* SubsAI */,
 				92CC2D392E2E9EA70008B48C /* SubsAITests */,
 				92CC2D432E2E9EA70008B48C /* SubsAIUITests */,
+				9269DDDB2F8A967D00C17846 /* Frameworks */,
 				92CC2D2A2E2E9EA50008B48C /* Products */,
 			);
 			sourceTree = "<group>";
@@ -155,6 +167,8 @@
 				927ABD442EDEE35F005812CB /* GoogleSignInSwift */,
 				927F61D12F5C657900F7C98D /* GoogleAPIClientForREST_YouTube */,
 				927F61D32F5C657900F7C98D /* GoogleAPIClientForREST_YouTubeAnalytics */,
+				9269DDD52F8A723200C17846 /* RevenueCatUI */,
+				9269DDDC2F8A967D00C17846 /* RevenueCat */,
 			);
 			productName = SubsAI;
 			productReference = 92CC2D292E2E9EA50008B48C /* SubsAI.app */;
@@ -243,6 +257,7 @@
 				9233F4042E30087F003620EC /* XCRemoteSwiftPackageReference "KeychainAccess" */,
 				927ABD412EDEE35F005812CB /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 				927F61D02F5C657900F7C98D /* XCRemoteSwiftPackageReference "google-api-objectivec-client-for-rest" */,
+				9269DDD42F8A723200C17846 /* XCRemoteSwiftPackageReference "purchases-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 92CC2D2A2E2E9EA50008B48C /* Products */;
@@ -631,6 +646,14 @@
 				kind = branch;
 			};
 		};
+		9269DDD42F8A723200C17846 /* XCRemoteSwiftPackageReference "purchases-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/RevenueCat/purchases-ios.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.67.2;
+			};
+		};
 		927ABD412EDEE35F005812CB /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/google/GoogleSignIn-iOS.git";
@@ -662,6 +685,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 9233F4042E30087F003620EC /* XCRemoteSwiftPackageReference "KeychainAccess" */;
 			productName = KeychainAccess;
+		};
+		9269DDD52F8A723200C17846 /* RevenueCatUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9269DDD42F8A723200C17846 /* XCRemoteSwiftPackageReference "purchases-ios" */;
+			productName = RevenueCatUI;
+		};
+		9269DDDC2F8A967D00C17846 /* RevenueCat */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9269DDD42F8A723200C17846 /* XCRemoteSwiftPackageReference "purchases-ios" */;
+			productName = RevenueCat;
 		};
 		927ABD422EDEE35F005812CB /* GoogleSignIn */ = {
 			isa = XCSwiftPackageProductDependency;

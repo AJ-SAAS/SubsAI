@@ -1,18 +1,27 @@
 import SwiftUI
+import RevenueCat
 import GoogleSignIn
-import FirebaseCore     // ← Added for App Check
 
 @main
 struct SubsAIApp: App {
 
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @ObservedObject private var auth = AuthManager.shared
+    @StateObject private var purchaseVM = PurchaseViewModel()
+
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+
     @State private var showingSplash = true
     @State private var showingAnalysis = false
+    @State private var showPaywallAfterOnboarding = false
 
     init() {
-        FirebaseApp.configure()   // ← Added (required for App Check)
+        Purchases.configure(withAPIKey: "appl_hHzGiYMOlFmbZQycQzGXreCikix")
+        
+        #if DEBUG
+        Purchases.logLevel = .debug
+        #endif
     }
 
     var body: some Scene {
@@ -38,9 +47,23 @@ struct SubsAIApp: App {
                     AnalysisLoadingView {
                         withAnimation(.easeInOut(duration: 0.4)) {
                             showingAnalysis = false
+                            hasCompletedOnboarding = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                                showPaywallAfterOnboarding = true
+                            }
                         }
                     }
-                } else {
+                }
+                // ✅ FIXED PAYWALL SECTION
+                else if showPaywallAfterOnboarding && !purchaseVM.isPremium {
+                    PaywallView()
+                        .onDisappear {
+                            // Refresh premium status when paywall closes (buy or dismiss)
+                            purchaseVM.checkSubscriptionStatus()
+                            showPaywallAfterOnboarding = false
+                        }
+                }
+                else {
                     MainTabView()
                 }
             }
@@ -49,6 +72,7 @@ struct SubsAIApp: App {
             .animation(.easeInOut(duration: 0.35), value: auth.isSignedIn)
             .animation(.easeInOut(duration: 0.35), value: auth.isYouTubeConnected)
             .animation(.easeInOut(duration: 0.35), value: showingAnalysis)
+            .animation(.easeInOut(duration: 0.35), value: showPaywallAfterOnboarding)
             .onOpenURL { url in
                 GIDSignIn.sharedInstance.handle(url)
             }
@@ -59,6 +83,8 @@ struct SubsAIApp: App {
             }
             .onReceive(NotificationCenter.default.publisher(for: .userSignedOut)) { _ in
                 showingAnalysis = false
+                showPaywallAfterOnboarding = false
+                hasCompletedOnboarding = false
             }
         }
     }
