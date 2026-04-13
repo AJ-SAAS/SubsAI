@@ -54,13 +54,16 @@ struct SubsAIApp: App {
                         }
                     }
                 }
-                // ✅ FIXED PAYWALL SECTION
+                // ✅ FIXED: Paywall using fullScreenCover (works reliably with your flow)
                 else if showPaywallAfterOnboarding && !purchaseVM.isPremium {
-                    PaywallView()
+                    // Placeholder view while the cover is presented
+                    MainTabView()
+                        .fullScreenCover(isPresented: $showPaywallAfterOnboarding) {
+                            PaywallView()
+                        }
                         .onDisappear {
-                            // Refresh premium status when paywall closes (buy or dismiss)
+                            // Refresh premium status after X button or successful purchase
                             purchaseVM.checkSubscriptionStatus()
-                            showPaywallAfterOnboarding = false
                         }
                 }
                 else {

@@ -50,4 +50,14 @@ class PurchaseViewModel: ObservableObject {
     func refreshStatus() {
         checkSubscriptionStatus()
     }
+    
+    // MARK: - NEW: Async refresh (better for use after paywall dismiss)
+    func checkSubscriptionStatusAsync() async {
+        do {
+            let customerInfo = try await Purchases.shared.customerInfo()
+            self.isPremium = customerInfo.entitlements["premium"]?.isActive == true
+        } catch {
+            print("❌ Error refreshing subscription status: \(error.localizedDescription)")
+        }
+    }
 }

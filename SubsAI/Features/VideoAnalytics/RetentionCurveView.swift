@@ -64,7 +64,7 @@ struct RetentionCurveView: View {
             HStack(spacing: 8) {
                 ForEach(analysis.dropOffPoints) { drop in
                     Text(dropPillLabel(drop))
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium)) // was 12
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(dropOffColor(drop).opacity(0.12))
@@ -73,7 +73,7 @@ struct RetentionCurveView: View {
                 }
 
                 Text("Strong 0–2 min")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium)) // was 12
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(Color.green.opacity(0.12))
@@ -83,10 +83,10 @@ struct RetentionCurveView: View {
         }
     }
 
-    // MARK: - Section Label (UPDATED SYSTEM)
+    // MARK: - Section Label
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 16, weight: .semibold, design: .serif))
+            .font(.system(size: 17, weight: .semibold, design: .serif)) // was 16
             .foregroundColor(AppTheme.textPrimary)
     }
 
@@ -140,7 +140,7 @@ struct RetentionChartView: View {
                 legendItem(color: .gray.opacity(0.5), label: "Your avg")
                 Spacer()
             }
-            .font(.system(size: 12))
+            .font(.system(size: 13)) // was 12
             .padding(.bottom, 4)
 
             // Chart
@@ -184,11 +184,11 @@ struct RetentionChartView: View {
 
             // X axis
             HStack {
-                Text("0%").font(.system(size: 11)).foregroundColor(.secondary)
+                Text("0%").font(.system(size: 12)).foregroundColor(.secondary)   // was 11
                 Spacer()
-                Text("50%").font(.system(size: 11)).foregroundColor(.secondary)
+                Text("50%").font(.system(size: 12)).foregroundColor(.secondary)  // was 11
                 Spacer()
-                Text("100%").font(.system(size: 11)).foregroundColor(.secondary)
+                Text("100%").font(.system(size: 12)).foregroundColor(.secondary) // was 11
             }
         }
     }

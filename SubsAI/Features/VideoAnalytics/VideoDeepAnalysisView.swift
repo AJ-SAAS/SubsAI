@@ -29,11 +29,11 @@ struct VideoDeepAnalysisView: View {
                 // MARK: - Video header
                 VStack(alignment: .leading, spacing: 4) {
                     Text(video.title)
-                        .font(.system(size: 16, weight: .medium, design: .serif))
+                        .font(.system(size: 17, weight: .medium, design: .serif)) // was 16
                         .foregroundColor(AppTheme.textPrimary)
                         .lineLimit(2)
                     Text(videoMetaText)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13)) // was 12
                         .foregroundColor(AppTheme.textSecondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -52,7 +52,7 @@ struct VideoDeepAnalysisView: View {
                         } label: {
                             VStack(spacing: 6) {
                                 Text(tab.rawValue)
-                                    .font(.system(size: 14))
+                                    .font(.system(size: 15)) // was 14
                                     .fontWeight(selectedTab == tab ? .semibold : .regular)
                                     .foregroundColor(
                                         selectedTab == tab

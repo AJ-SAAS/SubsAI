@@ -21,10 +21,7 @@ private func analyzePatterns(current: Video, all: [Video]) -> ChannelPattern? {
     let topVideos = Array(sorted.prefix(topCount))
     let botVideos = Array(sorted.suffix(topCount))
 
-    // MARK: Title pattern detection
-    func hasQuestion(_ title: String) -> Bool {
-        title.contains("?")
-    }
+    func hasQuestion(_ title: String) -> Bool { title.contains("?") }
     func hasNumber(_ title: String) -> Bool {
         title.range(of: #"\d"#, options: .regularExpression) != nil
     }
@@ -36,11 +33,8 @@ private func analyzePatterns(current: Video, all: [Video]) -> ChannelPattern? {
         let lower = title.lowercased()
         return lower.hasPrefix("how i") || lower.hasPrefix("i tried") || lower.hasPrefix("i built") || lower.hasPrefix("i made")
     }
-    func isShortTitle(_ title: String) -> Bool {
-        title.count < 50
-    }
+    func isShortTitle(_ title: String) -> Bool { title.count < 50 }
 
-    // Score top vs bottom title patterns
     let topQuestions  = topVideos.filter { hasQuestion($0.title) }.count
     let topNumbers    = topVideos.filter { hasNumber($0.title) }.count
     let topHowTo      = topVideos.filter { hasHowTo($0.title) }.count
@@ -53,7 +47,6 @@ private func analyzePatterns(current: Video, all: [Video]) -> ChannelPattern? {
     let botHowI       = botVideos.filter { hasHowI($0.title) }.count
     let botShort      = botVideos.filter { isShortTitle($0.title) }.count
 
-    // Derive top pattern sentence
     var topPattern = ""
     if topQuestions > botQuestions && topQuestions >= topCount / 2 {
         topPattern = "Your best-retained videos tend to have questions in the title — they create curiosity before the viewer even clicks."
@@ -68,7 +61,6 @@ private func analyzePatterns(current: Video, all: [Video]) -> ChannelPattern? {
         topPattern = "Your top \(topVideos.count) videos average \(Int(avgTopRetention * 100))% retention. Study their opening 30 seconds — that's where the pattern lives."
     }
 
-    // Derive bottom pattern sentence
     var bottomPattern = ""
     if botHowI > topHowI && botHowI >= botCount(botVideos) / 2 {
         bottomPattern = "Your weakest videos tend to start with \"How I\" or \"I tried\" — first-person process titles underperform on your channel compared to outcome-focused ones."
@@ -79,9 +71,7 @@ private func analyzePatterns(current: Video, all: [Video]) -> ChannelPattern? {
         bottomPattern = "Your bottom \(botVideos.count) videos average \(Int(avgBotRetention * 100))% retention — significantly below your channel average."
     }
 
-    // MARK: Study video
     let avgRetention = videosWithData.compactMap { $0.analytics?.retention }.reduce(0, +) / Double(videosWithData.count)
-
     let studyVideo = sorted.first(where: { $0.id != current.id }) ?? sorted[0]
     let studyRetention = Int((studyVideo.analytics?.retention ?? 0) * 100)
     let studyReason = "\(studyRetention)% retention vs your \(Int(avgRetention * 100))% channel average — the biggest gap in your library"
@@ -177,26 +167,25 @@ struct VideoCompareView: View {
             )
         }
 
-        // Updated Study Card
         VStack(alignment: .leading, spacing: 10) {
 
             Text("Study this video")
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold)) // was 14
                 .foregroundColor(AppTheme.accent)
 
             Text("\"\(p.studyVideo.title)\"")
-                .font(.system(size: 15, weight: .medium, design: .serif))
+                .font(.system(size: 16, weight: .medium, design: .serif)) // was 15
                 .foregroundColor(AppTheme.textPrimary)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(p.studyReason)
-                .font(.system(size: 13))
+                .font(.system(size: 14)) // was 13
                 .foregroundColor(AppTheme.textSecondary)
                 .lineSpacing(3)
 
             Text("Watch the first 60 seconds of this video back-to-back with your current one. The difference in how they open is almost always where the retention gap comes from.")
-                .font(.system(size: 13))
+                .font(.system(size: 14)) // was 13
                 .foregroundColor(AppTheme.textSecondary)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -205,7 +194,7 @@ struct VideoCompareView: View {
                 CoachReviewView(video: p.studyVideo, allVideos: allVideos)
             } label: {
                 Text("Review in Coach →")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 14, weight: .medium)) // was 13
                     .foregroundColor(AppTheme.accent)
             }
             .padding(.top, 4)
@@ -231,20 +220,19 @@ struct VideoCompareView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             Image(systemName: "video.slash")
-                .font(.system(size: 30))
+                .font(.system(size: 31)) // was 30
                 .foregroundColor(AppTheme.textTertiary)
             Text("Not enough videos to compare yet")
-                .font(.system(size: 13))
+                .font(.system(size: 14)) // was 13
                 .foregroundColor(AppTheme.textSecondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 30)
     }
 
-    // ✅ UPDATED SECTION LABEL
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 16, weight: .semibold, design: .serif))
+            .font(.system(size: 17, weight: .semibold, design: .serif)) // was 16
             .foregroundColor(AppTheme.textPrimary)
     }
 }
@@ -284,7 +272,7 @@ struct VideoCompareRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     if isCurrentVideo {
                         Text("This video")
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(.system(size: 10, weight: .semibold)) // was 9
                             .foregroundColor(AppTheme.accent)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -292,7 +280,7 @@ struct VideoCompareRow: View {
                             .cornerRadius(6)
                     }
                     Text(video.title)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 14, weight: .medium)) // was 13
                         .foregroundColor(AppTheme.textPrimary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -301,14 +289,14 @@ struct VideoCompareRow: View {
 
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(retPct)%")
-                        .font(.system(size: 20, weight: .medium, design: .serif))
+                        .font(.system(size: 21, weight: .medium, design: .serif)) // was 20
                         .foregroundColor(scoreColor)
                     Text("retention")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11)) // was 10
                         .foregroundColor(AppTheme.textTertiary)
                     if let vsAvg = vsAvgText {
                         Text(vsAvg)
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 11, weight: .medium)) // was 10
                             .foregroundColor(vsAvgColor)
                     }
                 }
@@ -358,7 +346,7 @@ struct CompareBar: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(label)
-                .font(.system(size: 11))
+                .font(.system(size: 12)) // was 11
                 .foregroundColor(AppTheme.textTertiary)
                 .frame(width: 50, alignment: .leading)
 
@@ -381,7 +369,7 @@ struct CompareBar: View {
             .frame(height: 14)
 
             Text(displayValue)
-                .font(.system(size: 11))
+                .font(.system(size: 12)) // was 11
                 .foregroundColor(AppTheme.textSecondary)
                 .frame(width: 36, alignment: .trailing)
         }

@@ -56,10 +56,10 @@ struct HookAnalysisView: View {
     private func hookVerdictCard(_ segment: HookSegment) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("What happened here")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold)) // was 12
                 .foregroundColor(AppTheme.textPrimary)
             Text(hookVerdictText(for: segment))
-                .font(.system(size: 13))
+                .font(.system(size: 14)) // was 13
                 .foregroundColor(AppTheme.textPrimary)
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
@@ -79,14 +79,14 @@ struct HookAnalysisView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 13))
+                    .font(.system(size: 14)) // was 13
                     .foregroundColor(AppTheme.accent)
                 Text("AI hook rewrite")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 15, weight: .medium)) // was 14
                     .foregroundColor(AppTheme.textPrimary)
                 Spacer()
                 Text("Coming soon")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium)) // was 10
                     .foregroundColor(AppTheme.accent)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
@@ -94,7 +94,7 @@ struct HookAnalysisView: View {
                     .cornerRadius(8)
             }
             Text("We'll look at how your video starts, find the weak spot, and write you a stronger opening line — based on what's already working on your channel.")
-                .font(.system(size: 13))
+                .font(.system(size: 14)) // was 13
                 .foregroundColor(AppTheme.textPrimary)
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
@@ -111,7 +111,7 @@ struct HookAnalysisView: View {
     // MARK: - Helpers
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 16, weight: .semibold, design: .serif))
+            .font(.system(size: 17, weight: .semibold, design: .serif)) // was 16
             .foregroundColor(AppTheme.textPrimary)
     }
 
@@ -179,7 +179,7 @@ struct HookSegmentRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Text(segment.label)
-                .font(.system(size: 12))
+                .font(.system(size: 13)) // was 12
                 .foregroundColor(AppTheme.textSecondary)
                 .frame(width: 40, alignment: .leading)
 
@@ -202,7 +202,7 @@ struct HookSegmentRow: View {
             .frame(height: 14)
 
             Text("\(Int(segment.retention * 100))%")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium)) // was 12
                 .foregroundColor(AppTheme.textPrimary)
                 .frame(width: 32, alignment: .trailing)
         }
@@ -218,11 +218,11 @@ struct InsightBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold)) // was 14
                 .foregroundColor(accentColor)
 
             Text(content)
-                .font(.system(size: 13))
+                .font(.system(size: 14)) // was 13
                 .foregroundColor(AppTheme.textPrimary)
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)

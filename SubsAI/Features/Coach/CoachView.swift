@@ -42,7 +42,7 @@ struct CoachView: View {
 
                         // MARK: - Title
                         Text("Coach")
-                            .font(.system(size: 28, weight: .medium, design: .serif))
+                            .font(.system(size: 29, weight: .medium, design: .serif)) // was 28
                             .foregroundColor(AppTheme.textPrimary)
                             .padding(.top, 8)
 
@@ -63,7 +63,7 @@ struct CoachView: View {
 
                             HStack {
                                 Text("Your videos")
-                                    .font(.system(size: 16, weight: .semibold, design: .serif))
+                                    .font(.system(size: 17, weight: .semibold, design: .serif)) // was 16
                                     .foregroundColor(AppTheme.textPrimary)
 
                                 Spacer()
@@ -73,9 +73,9 @@ struct CoachView: View {
                                 } label: {
                                     HStack(spacing: 4) {
                                         Image(systemName: "arrow.up.arrow.down")
-                                            .font(.system(size: 11))
+                                            .font(.system(size: 12)) // was 11
                                         Text(sortOrder.rawValue)
-                                            .font(.system(size: 12))
+                                            .font(.system(size: 13)) // was 12
                                     }
                                     .foregroundColor(AppTheme.textSecondary)
                                     .padding(.horizontal, 10)
@@ -168,7 +168,7 @@ struct CoachView: View {
     private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "video.slash")
-                .font(.system(size: 36))
+                .font(.system(size: 37)) // was 36
                 .foregroundColor(AppTheme.textTertiary)
             Text("No videos found")
                 .font(.headline)
@@ -230,16 +230,15 @@ struct NextUploadBriefingCard: View {
 
             HStack(spacing: 5) {
                 Image(systemName: "video.badge.plus")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12)) // was 11
                     .foregroundColor(AppTheme.accent)
                 Text("Before your next upload")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium)) // was 10
                     .foregroundColor(AppTheme.accent)
                     .kerning(1.0)
                     .textCase(.uppercase)
             }
 
-            // Line 1 — CTR situation
             if channelAvgCTR > 0 {
                 BriefingLine(
                     icon: "cursorarrow.click",
@@ -248,7 +247,6 @@ struct NextUploadBriefingCard: View {
                 )
             }
 
-            // Line 2 — best video to study
             if let best = bestVideo {
                 BriefingLine(
                     icon: "arrow.triangle.2.circlepath",
@@ -257,7 +255,6 @@ struct NextUploadBriefingCard: View {
                 )
             }
 
-            // Line 3 — winning pattern from Intelligence
             if let pattern = report?.winningPatterns.first {
                 BriefingLine(
                     icon: "chart.line.uptrend.xyaxis",
@@ -266,7 +263,6 @@ struct NextUploadBriefingCard: View {
                 )
             }
 
-            // Line 4 — posting time
             if let insight = postingTimeInsight {
                 BriefingLine(
                     icon: "clock",
@@ -275,17 +271,16 @@ struct NextUploadBriefingCard: View {
                 )
             }
 
-            // Link to Intelligence — uses passed vm, never creates a new one
             if let vm = vm {
                 NavigationLink {
                     IntelligenceView(vm: vm)
                 } label: {
                     HStack(spacing: 5) {
                         Text("See all patterns in Intelligence")
-                            .font(.system(size: 12))
+                            .font(.system(size: 13)) // was 12
                             .foregroundColor(AppTheme.accent)
                         Image(systemName: "arrow.right")
-                            .font(.system(size: 11))
+                            .font(.system(size: 12)) // was 11
                             .foregroundColor(AppTheme.accent)
                     }
                 }
@@ -312,12 +307,12 @@ struct BriefingLine: View {
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: icon)
-                .font(.system(size: 11))
+                .font(.system(size: 12)) // was 11
                 .foregroundColor(color)
                 .frame(width: 16)
                 .padding(.top, 1)
             Text(text)
-                .font(.system(size: 12))
+                .font(.system(size: 13)) // was 12
                 .foregroundColor(AppTheme.textSecondary)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -374,13 +369,13 @@ struct ImprovedDiagnosisCard: View {
                     .fill(AppTheme.accent)
                     .frame(width: 5, height: 5)
                 Text("Channel diagnosis")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium)) // was 10
                     .foregroundColor(AppTheme.accent)
                     .kerning(1.0)
                     .textCase(.uppercase)
             }
             Text(diagnosis.headline)
-                .font(.system(size: 17, weight: .medium, design: .serif))
+                .font(.system(size: 18, weight: .medium, design: .serif)) // was 17
                 .foregroundColor(AppTheme.textPrimary)
                 .lineSpacing(3)
             VStack(alignment: .leading, spacing: 6) {
@@ -391,7 +386,7 @@ struct ImprovedDiagnosisCard: View {
                             .frame(width: 4, height: 4)
                             .padding(.top, 5)
                         Text(bullet + (bullet.hasSuffix(".") ? "" : "."))
-                            .font(.system(size: 12))
+                            .font(.system(size: 13)) // was 12
                             .foregroundColor(AppTheme.textSecondary)
                             .lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true)
@@ -403,7 +398,7 @@ struct ImprovedDiagnosisCard: View {
                     HStack(spacing: 6) {
                         ForEach(healthChips, id: \.label) { chip in
                             Text(chip.label)
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.system(size: 11, weight: .medium)) // was 10
                                 .foregroundColor(chip.color)
                                 .padding(.horizontal, 9)
                                 .padding(.vertical, 4)

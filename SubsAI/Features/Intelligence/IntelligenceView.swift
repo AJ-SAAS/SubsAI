@@ -20,10 +20,10 @@ struct IntelligenceView: View {
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Intelligence")
-                                .font(.system(size: 28, weight: .medium, design: .serif))
+                                .font(.system(size: 29, weight: .medium, design: .serif)) // was 28
                                 .foregroundColor(AppTheme.textPrimary)
                             Text("What the data says about your channel")
-                                .font(.system(size: 13))
+                                .font(.system(size: 14)) // was 13
                                 .foregroundColor(AppTheme.textSecondary)
                         }
                         .padding(.top, 8)
@@ -62,27 +62,22 @@ struct IntelligenceView: View {
     @ViewBuilder
     private func intelligenceContent(_ report: ChannelIntelligenceReport) -> some View {
 
-        // 1 — Winning patterns
         if !report.winningPatterns.isEmpty {
             sectionLabel("What's working on your channel")
             WinningPatternsCard(patterns: report.winningPatterns, videos: vm.videos)
         }
 
-        // 2 — Growth quality score
         sectionLabel("How efficiently is your channel growing?")
         GrowthQualityCard(score: report.growthQualityScore, videos: vm.videos)
 
-        // 3 — Top 3 fixes
         sectionLabel("Your top 3 fixes right now")
         TopFixesCard(videos: vm.videos, weaknesses: report.structuralWeaknesses)
 
-        // 4 — Best time to post
         if let insight = vm.postingTimeInsight {
             sectionLabel("When should you post?")
             PostingTimeCard(insight: insight)
         }
 
-        // 5 — Best converting videos
         let gpvVideos = vm.videos
             .filter { $0.growthPerView > 0 }
             .sorted { $0.growthPerView > $1.growthPerView }
@@ -91,7 +86,6 @@ struct IntelligenceView: View {
             GPVLeaderboard(videos: Array(gpvVideos.prefix(5)), allVideos: vm.videos)
         }
 
-        // 6 — Videos worth repeating (Replicate only)
         let replicateVideos = vm.videosByPriority
             .filter { report.replicationScore(for: $0) == .replicate }
             .prefix(4)
@@ -124,13 +118,13 @@ struct IntelligenceView: View {
     private var replicationExplainer: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.system(size: 13))
+                .font(.system(size: 14)) // was 13
                 .foregroundColor(AppTheme.accent)
                 .padding(.top, 1)
                 .frame(width: 20)
 
             Text("These videos outperformed your channel average on both retention and subscriber conversion. Make more like them.")
-                .font(.system(size: 12))
+                .font(.system(size: 13)) // was 12
                 .foregroundColor(AppTheme.textSecondary)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -148,14 +142,14 @@ struct IntelligenceView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 13))
+                    .font(.system(size: 14)) // was 13
                     .foregroundColor(AppTheme.accent)
                 Text("Next video recommendation")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 15, weight: .medium)) // was 14
                     .foregroundColor(AppTheme.textPrimary)
                 Spacer()
                 Text("Coming soon")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium)) // was 10
                     .foregroundColor(AppTheme.accent)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
@@ -163,7 +157,7 @@ struct IntelligenceView: View {
                     .cornerRadius(8)
             }
             Text("AI-powered recommendation based on your winning patterns — exact title, hook, format, and posting time for your next upload.")
-                .font(.system(size: 13))
+                .font(.system(size: 14)) // was 13
                 .foregroundColor(AppTheme.textSecondary)
                 .lineSpacing(3)
         }
@@ -190,7 +184,7 @@ struct IntelligenceView: View {
     private var notEnoughDataState: some View {
         VStack(spacing: 12) {
             Image(systemName: "chart.bar.xaxis")
-                .font(.system(size: 40))
+                .font(.system(size: 41)) // was 40
                 .foregroundColor(AppTheme.textTertiary)
             Text("Not enough data yet")
                 .font(.headline)
@@ -207,7 +201,7 @@ struct IntelligenceView: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 16, weight: .semibold, design: .serif))
+            .font(.system(size: 17, weight: .semibold, design: .serif)) // was 16
             .foregroundColor(AppTheme.textPrimary)
     }
 
@@ -250,17 +244,16 @@ struct PostingTimeCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
 
-            // Header
             HStack(spacing: 8) {
                 Image(systemName: "clock.fill")
-                    .font(.system(size: 13))
+                    .font(.system(size: 14)) // was 13
                     .foregroundColor(.cyan)
                 Text("Based on \(insight.sampleSize) videos")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12)) // was 11
                     .foregroundColor(AppTheme.textSecondary)
                 Spacer()
                 Text(reliabilityLabel)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium)) // was 10
                     .foregroundColor(reliabilityColor)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
@@ -268,20 +261,18 @@ struct PostingTimeCard: View {
                     .cornerRadius(8)
             }
 
-            // Best vs worst day comparison
             HStack(spacing: 12) {
-                // Best day
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Best day")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 11, weight: .medium)) // was 10
                         .foregroundColor(.green)
                         .kerning(0.5)
                         .textCase(.uppercase)
                     Text(insight.bestDay)
-                        .font(.system(size: 22, weight: .medium, design: .serif))
+                        .font(.system(size: 23, weight: .medium, design: .serif)) // was 22
                         .foregroundColor(AppTheme.textPrimary)
                     Text("\(formatViews(insight.bestDayAvgViews)) avg views")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13)) // was 12
                         .foregroundColor(AppTheme.textSecondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -293,18 +284,17 @@ struct PostingTimeCard: View {
                         .stroke(Color.green.opacity(0.2), lineWidth: 0.5)
                 )
 
-                // Worst day
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Worst day")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 11, weight: .medium)) // was 10
                         .foregroundColor(.red)
                         .kerning(0.5)
                         .textCase(.uppercase)
                     Text(insight.worstDay)
-                        .font(.system(size: 22, weight: .medium, design: .serif))
+                        .font(.system(size: 23, weight: .medium, design: .serif)) // was 22
                         .foregroundColor(AppTheme.textPrimary)
                     Text("\(formatViews(insight.worstDayAvgViews)) avg views")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13)) // was 12
                         .foregroundColor(AppTheme.textSecondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -317,28 +307,26 @@ struct PostingTimeCard: View {
                 )
             }
 
-            // Gap callout
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "arrow.up.right")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12)) // was 11
                     .foregroundColor(.cyan)
                     .padding(.top, 1)
                 Text("\(insight.bestDay) uploads get \(gapPercent)% more views on average than \(insight.worstDay). Schedule your next upload for \(insight.bestDay).")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13)) // was 12
                     .foregroundColor(AppTheme.textSecondary)
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            // Reliability note if early signal
             if !insight.isReliable {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "info.circle")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12)) // was 11
                         .foregroundColor(.orange)
                         .padding(.top, 1)
                     Text("This is an early signal based on \(insight.sampleSize) videos. It will sharpen as you upload more consistently.")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12)) // was 11
                         .foregroundColor(AppTheme.textTertiary)
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -429,14 +417,14 @@ struct TopFixesCard: View {
             if topFixes.isEmpty {
                 HStack(spacing: 12) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 20))
+                        .font(.system(size: 21)) // was 20
                         .foregroundColor(.green)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("No major issues found")
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.system(size: 15, weight: .medium)) // was 14
                             .foregroundColor(AppTheme.textPrimary)
                         Text("Your channel metrics are above benchmark. Keep uploading consistently.")
-                            .font(.system(size: 12))
+                            .font(.system(size: 13)) // was 12
                             .foregroundColor(AppTheme.textSecondary)
                             .lineSpacing(3)
                     }
@@ -474,7 +462,7 @@ struct TopFixRow: View {
                     .fill(color.opacity(0.12))
                     .frame(width: 28, height: 28)
                 Text("\(number)")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold)) // was 13
                     .foregroundColor(color)
             }
             .frame(width: 28)
@@ -482,10 +470,10 @@ struct TopFixRow: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 14, weight: .medium)) // was 13
                     .foregroundColor(AppTheme.textPrimary)
                 Text(detail)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13)) // was 12
                     .foregroundColor(AppTheme.textSecondary)
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -534,10 +522,10 @@ struct GrowthQualityCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .lastTextBaseline, spacing: 8) {
                         Text(String(format: "%.1f", score.composite))
-                            .font(.system(size: 42, weight: .light, design: .serif))
+                            .font(.system(size: 43, weight: .light, design: .serif)) // was 42
                             .foregroundColor(AppTheme.textPrimary)
                         Text(score.grade.rawValue)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 14, weight: .semibold)) // was 13
                             .foregroundColor(gradeColor)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
@@ -545,7 +533,7 @@ struct GrowthQualityCard: View {
                             .cornerRadius(10)
                     }
                     Text("out of 10")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13)) // was 12
                         .foregroundColor(AppTheme.textTertiary)
                 }
 
@@ -553,27 +541,27 @@ struct GrowthQualityCard: View {
 
                 VStack(alignment: .trailing, spacing: 4) {
                     Text("Subs per 1K views")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12)) // was 11
                         .foregroundColor(AppTheme.textTertiary)
                     if channelAvgGPV > 0 {
                         Text(String(format: "%.1f avg", channelAvgGPV))
-                            .font(.system(size: 16, weight: .medium, design: .serif))
+                            .font(.system(size: 17, weight: .medium, design: .serif)) // was 16
                             .foregroundColor(gpvColor)
                     } else {
                         Text(String(format: "~%.1f est.", score.subsPerThousandViews))
-                            .font(.system(size: 16, weight: .medium, design: .serif))
+                            .font(.system(size: 17, weight: .medium, design: .serif)) // was 16
                             .foregroundColor(AppTheme.textSecondary)
                     }
                     if let best = bestGPVVideo {
                         Text("Best: \(String(format: "%.1f", best.growthPerView))/1K")
-                            .font(.system(size: 10))
+                            .font(.system(size: 11)) // was 10
                             .foregroundColor(.green)
                     }
                 }
             }
 
             Text("How efficiently your channel converts views into subscribers. A higher score means each view is working harder for your channel.")
-                .font(.system(size: 12))
+                .font(.system(size: 13)) // was 12
                 .foregroundColor(AppTheme.textSecondary)
                 .lineSpacing(3)
 
@@ -630,7 +618,7 @@ struct GPVLeaderboard: View {
                 } label: {
                     HStack(spacing: 10) {
                         Text("#\(index + 1)")
-                            .font(.system(size: 12, weight: .medium, design: .serif))
+                            .font(.system(size: 13, weight: .medium, design: .serif)) // was 12
                             .foregroundColor(index == 0 ? .green : AppTheme.textTertiary)
                             .frame(width: 24, alignment: .leading)
 
@@ -641,22 +629,22 @@ struct GPVLeaderboard: View {
                             .background(Color.gray.opacity(0.2).cornerRadius(6))
 
                         Text(video.title)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 13, weight: .medium)) // was 12
                             .foregroundColor(AppTheme.textPrimary)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
 
                         VStack(alignment: .trailing, spacing: 1) {
                             Text(String(format: "%.1f", video.growthPerView))
-                                .font(.system(size: 14, weight: .medium, design: .serif))
+                                .font(.system(size: 15, weight: .medium, design: .serif)) // was 14
                                 .foregroundColor(gpvColor(video.growthPerView))
                             Text("per 1K")
-                                .font(.system(size: 9))
+                                .font(.system(size: 10)) // was 9
                                 .foregroundColor(AppTheme.textTertiary)
                         }
 
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 10))
+                            .font(.system(size: 11)) // was 10
                             .foregroundColor(AppTheme.textTertiary)
                     }
                     .padding(.horizontal, 14)
@@ -690,7 +678,7 @@ struct IntelligenceMetricBar: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(label)
-                .font(.system(size: 12))
+                .font(.system(size: 13)) // was 12
                 .foregroundColor(AppTheme.textSecondary)
                 .frame(width: 120, alignment: .leading)
 
@@ -713,7 +701,7 @@ struct IntelligenceMetricBar: View {
             .frame(height: 12)
 
             Text(displayValue)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium)) // was 12
                 .foregroundColor(AppTheme.textPrimary)
                 .frame(width: 52, alignment: .trailing)
         }
@@ -767,22 +755,22 @@ struct WinningPatternRow: View {
                         .fill(AppTheme.success.opacity(0.1))
                         .frame(width: 30, height: 30)
                     Image(systemName: pattern.icon)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13)) // was 12
                         .foregroundColor(AppTheme.success)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(pattern.title)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 14, weight: .medium)) // was 13
                         .foregroundColor(AppTheme.textPrimary)
                     Text(pattern.description)
-                        .font(.system(size: 11))
+                        .font(.system(size: 12)) // was 11
                         .foregroundColor(AppTheme.textSecondary)
                         .lineSpacing(2)
                         .lineLimit(2)
                 }
                 Spacer()
                 Text(pattern.liftText)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold)) // was 11
                     .foregroundColor(pattern.liftIsPositive ? AppTheme.success : AppTheme.danger)
                     .multilineTextAlignment(.trailing)
             }
@@ -793,11 +781,11 @@ struct WinningPatternRow: View {
                 } label: {
                     HStack(spacing: 5) {
                         Text("Best example: \"\(String(video.title.prefix(30)))\"")
-                            .font(.system(size: 11))
+                            .font(.system(size: 12)) // was 11
                             .foregroundColor(AppTheme.accent)
                             .lineLimit(1)
                         Image(systemName: "arrow.right")
-                            .font(.system(size: 10))
+                            .font(.system(size: 11)) // was 10
                             .foregroundColor(AppTheme.accent)
                     }
                 }
@@ -807,7 +795,7 @@ struct WinningPatternRow: View {
     }
 }
 
-// MARK: - StructuralWeaknessCard (kept for backward compat)
+// MARK: - StructuralWeaknessCard
 struct StructuralWeaknessCard: View {
     let weaknesses: [StructuralWeakness]
 
@@ -852,10 +840,10 @@ struct WeaknessRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(weakness.title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 14, weight: .medium)) // was 13
                     .foregroundColor(AppTheme.textPrimary)
                 Text(weakness.detail)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13)) // was 12
                     .foregroundColor(AppTheme.textSecondary)
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -899,20 +887,20 @@ struct ReplicationRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(video.title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 14, weight: .medium)) // was 13
                     .foregroundColor(AppTheme.textPrimary)
                     .lineLimit(1)
 
                 HStack(spacing: 4) {
                     Text(viewsText)
-                        .font(.system(size: 11))
+                        .font(.system(size: 12)) // was 11
                         .foregroundColor(AppTheme.textSecondary)
                     if video.growthPerView > 0 {
                         Text("·")
-                            .font(.system(size: 11))
+                            .font(.system(size: 12)) // was 11
                             .foregroundColor(AppTheme.textTertiary)
                         Text(video.growthPerViewLabel)
-                            .font(.system(size: 11))
+                            .font(.system(size: 12)) // was 11
                             .foregroundColor(gpvColor(video.growthPerView))
                     }
                 }
@@ -922,10 +910,10 @@ struct ReplicationRow: View {
 
             VStack(alignment: .trailing, spacing: 3) {
                 Text(score.rawValue)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold)) // was 11
                     .foregroundColor(scoreColor)
                 Image(systemName: score.icon)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12)) // was 11
                     .foregroundColor(scoreColor)
             }
         }
@@ -954,10 +942,10 @@ struct ReplicationBadge: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: score.icon)
-                .font(.system(size: 10))
+                .font(.system(size: 11)) // was 10
                 .foregroundColor(color)
             Text(score.rawValue)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold)) // was 10
                 .foregroundColor(color)
         }
         .padding(.horizontal, 8)

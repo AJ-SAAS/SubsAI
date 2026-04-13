@@ -1,4 +1,3 @@
-// Features/Onboarding/WelcomeView.swift
 import SwiftUI
 
 struct WelcomeView: View {
@@ -8,22 +7,19 @@ struct WelcomeView: View {
 
     private let pages: [WelcomePage] = [
         WelcomePage(
-            icon: "chart.line.uptrend.xyaxis",
-            iconColor: Color(red: 0.4, green: 0.6, blue: 1.0),
+            imageName: "subsaipw5",
             headline: "Know exactly what's working",
-            body: "See which videos are growing your channel and which ones are holding you back — with data from your actual channel, not generic benchmarks."
+            body: "See which videos are growing your channel and which ones are holding you back — with real data from your own channel."
         ),
         WelcomePage(
-            icon: "figure.mind.and.body",
-            iconColor: Color(red: 0.5, green: 0.85, blue: 0.6),
+            imageName: "subsaipw2",
             headline: "A coach, not just a dashboard",
-            body: "SubsAI tells you what to fix before your next upload — specific, actionable, based on your own patterns."
+            body: "SubsAI tells you exactly what to fix before your next upload — specific, actionable insights based on your patterns."
         ),
         WelcomePage(
-            icon: "clock.badge.checkmark",
-            iconColor: Color(red: 1.0, green: 0.7, blue: 0.3),
+            imageName: "subsaipw3",
             headline: "Built for creators who are serious",
-            body: "Stop guessing why some videos pop and others don't. Your data has the answer. SubsAI surfaces it."
+            body: "Stop guessing why some videos pop and others don't. Your data already knows the answer."
         )
     ]
 
@@ -35,23 +31,21 @@ struct WelcomeView: View {
 
             VStack(spacing: 0) {
 
-                // Skip button
+                // Skip Button
                 HStack {
                     Spacer()
-                    Button {
+                    Button("Skip") {
                         onContinue()
-                    } label: {
-                        Text("Skip")
-                            .font(.system(size: 14))
-                            .foregroundColor(AppTheme.textTertiary)
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 16)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(AppTheme.textTertiary)
+                    .padding(.top, 20)
+                    .padding(.trailing, 24)
                 }
 
                 Spacer()
 
-                // Page content
+                // Main Content with Big Images
                 TabView(selection: $currentPage) {
                     ForEach(Array(pages.enumerated()), id: \.offset) { index, page in
                         pageView(page)
@@ -59,83 +53,88 @@ struct WelcomeView: View {
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
-                .animation(.easeInOut(duration: 0.4), value: currentPage)
 
                 Spacer()
 
-                // Page indicators
+                // Page Indicators
                 HStack(spacing: 8) {
                     ForEach(0..<pages.count, id: \.self) { index in
-                        RoundedRectangle(cornerRadius: 3)
+                        RoundedRectangle(cornerRadius: 4)
                             .fill(index == currentPage ? AppTheme.accent : AppTheme.borderSubtle)
-                            .frame(width: index == currentPage ? 20 : 6, height: 6)
-                            .animation(.easeInOut(duration: 0.3), value: currentPage)
+                            .frame(width: index == currentPage ? 28 : 8, height: 8)
                     }
                 }
-                .padding(.bottom, 32)
+                .padding(.bottom, 40)
 
-                // CTA
+                // CTA Button
                 Button {
                     if currentPage < pages.count - 1 {
-                        withAnimation { currentPage += 1 }
+                        withAnimation(.easeInOut(duration: 0.4)) {
+                            currentPage += 1
+                        }
                     } else {
                         onContinue()
                     }
                 } label: {
-                    Text(currentPage < pages.count - 1 ? "Next" : "Get started")
-                        .font(.system(size: 16, weight: .semibold))
+                    Text(currentPage < pages.count - 1 ? "Next" : "Get Started")
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 54)
+                        .frame(height: 58)
                         .background(AppTheme.accent)
                         .cornerRadius(16)
                 }
                 .padding(.horizontal, 32)
-                .padding(.bottom, 48)
+                .padding(.bottom, 50)
             }
         }
         .opacity(animateIn ? 1 : 0)
-        .offset(y: animateIn ? 0 : 20)
+        .offset(y: animateIn ? 0 : 30)
         .onAppear {
-            withAnimation(.easeOut(duration: 0.5)) {
+            withAnimation(.easeOut(duration: 0.6)) {
                 animateIn = true
             }
         }
     }
 
     private func pageView(_ page: WelcomePage) -> some View {
-        VStack(spacing: 28) {
-            ZStack {
-                Circle()
-                    .fill(page.iconColor.opacity(0.12))
-                    .frame(width: 100, height: 100)
-                Image(systemName: page.icon)
-                    .font(.system(size: 40))
-                    .foregroundColor(page.iconColor)
-            }
+        VStack(spacing: 32) {
 
-            VStack(spacing: 12) {
+            // Large Image with subtle glow
+            Image(page.imageName)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity)
+                .frame(height: 420)                    // Big and impactful
+                .cornerRadius(28)
+                .shadow(color: AppTheme.accent.opacity(0.15), radius: 25, x: 0, y: 12)
+                .padding(.horizontal, 20)
+
+            VStack(spacing: 16) {
                 Text(page.headline)
-                    .font(.system(size: 24, weight: .medium, design: .serif))
+                    .font(.system(size: 27, weight: .medium, design: .serif))
                     .foregroundColor(AppTheme.textPrimary)
                     .multilineTextAlignment(.center)
-                    .lineSpacing(3)
+                    .lineSpacing(4)
+                    .padding(.horizontal, 20)
 
                 Text(page.body)
-                    .font(.system(size: 15))
+                    .font(.system(size: 16))
                     .foregroundColor(AppTheme.textSecondary)
                     .multilineTextAlignment(.center)
-                    .lineSpacing(5)
+                    .lineSpacing(6)
                     .padding(.horizontal, 32)
             }
+
+            Spacer(minLength: 20)
         }
-        .padding(.horizontal, 16)
+        .padding(.top, 10)
     }
 }
 
+// MARK: - Model
 struct WelcomePage {
-    let icon: String
-    let iconColor: Color
+    let imageName: String
     let headline: String
     let body: String
 }

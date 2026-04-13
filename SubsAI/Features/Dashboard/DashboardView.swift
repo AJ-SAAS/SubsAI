@@ -1,6 +1,6 @@
 // Features/Dashboard/DashboardView.swift
 import SwiftUI
-import StoreKit   // ← Added for App Store review request
+import StoreKit
 
 struct DashboardView: View {
     @StateObject private var vm = HomeViewModel()
@@ -9,9 +9,11 @@ struct DashboardView: View {
     @State private var customGoals: [(GoalType, Int)] = []
     @State private var authErrorMessage: String?
 
-    // MARK: - Review Request
+    // MARK: - Review Request (Improved - respects Apple's limits)
     @Environment(\.requestReview) private var requestReview
-    @AppStorage("hasRequestedReviewAfterConnect") private var hasRequestedReviewAfterConnect = false
+    
+    @AppStorage("lastReviewRequestDate") private var lastReviewRequestDate: Double = 0
+    @AppStorage("reviewRequestsThisYear") private var reviewRequestsThisYear: Int = 0
 
     private let subsMilestones = [
         1_000, 5_000, 10_000, 25_000, 50_000,
@@ -114,19 +116,8 @@ struct DashboardView: View {
             .presentationDragIndicator(.visible)
         }
         .onAppear {
-            // Safe — loadChannelStats guards on isYouTubeConnected internally
             Task { await vm.loadChannelStats() }
-            
-            // NEW: Request App Store review ~60 seconds after landing on dashboard
-            // (Only once after first YouTube connection)
-            if !hasRequestedReviewAfterConnect {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
-                    requestReview()
-                    
-                    // Mark as shown so it doesn't trigger again
-                    hasRequestedReviewAfterConnect = true
-                }
-            }
+            attemptReviewRequest()
         }
         .onReceive(NotificationCenter.default.publisher(for: .authRestored)) { _ in
             Task { await vm.loadChannelStats() }
@@ -147,6 +138,27 @@ struct DashboardView: View {
         }
     }
 
+    // MARK: - Improved Review Request Logic
+    private func attemptReviewRequest() {
+        let now = Date().timeIntervalSince1970
+        let oneYearAgo = now - (365 * 24 * 60 * 60)
+        
+        if lastReviewRequestDate < oneYearAgo {
+            reviewRequestsThisYear = 0
+        }
+        
+        guard reviewRequestsThisYear < 3 else { return }
+        guard vm.channelInfo != nil && !vm.isLoading else { return }
+        
+        if now - lastReviewRequestDate < (30 * 24 * 60 * 60) {
+            return
+        }
+        
+        requestReview()
+        lastReviewRequestDate = now
+        reviewRequestsThisYear += 1
+    }
+
     // MARK: - Channel header
     private func channelHeader(_ channel: Channel) -> some View {
         HStack(spacing: 16) {
@@ -165,13 +177,13 @@ struct DashboardView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(channel.name)
-                    .font(.system(size: 22, weight: .semibold, design: .serif))
+                    .font(.system(size: 23, weight: .semibold, design: .serif)) // was 22
                     .foregroundColor(AppTheme.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
 
                 Text("\(channel.subscribers.formatted()) subscribers")
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: 16, weight: .medium)) // was 15
                     .foregroundColor(AppTheme.textSecondary)
 
                 if let growth = vm.subscriberGrowth, growth.absolute > 0 {
@@ -180,7 +192,7 @@ struct DashboardView: View {
                             .fill(AppTheme.success)
                             .frame(width: 5, height: 5)
                         Text("+\(growth.absolute.formatted()) \(vm.selectedPeriod.label)")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 13, weight: .medium)) // was 12
                             .foregroundColor(AppTheme.success)
                     }
                     .padding(.horizontal, 8)
@@ -205,7 +217,7 @@ struct DashboardView: View {
                     .fill(focus.color)
                     .frame(width: 5, height: 5)
                 Text("Your focus right now")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium)) // was 10
                     .foregroundColor(focus.color)
                     .kerning(1.0)
                     .textCase(.uppercase)
@@ -215,23 +227,23 @@ struct DashboardView: View {
                 if focus.linksToCoach {
                     HStack(spacing: 3) {
                         Text("See Coach")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 11, weight: .medium)) // was 10
                             .foregroundColor(focus.color)
                         Image(systemName: "arrow.right")
-                            .font(.system(size: 10))
+                            .font(.system(size: 11)) // was 10
                             .foregroundColor(focus.color)
                     }
                 }
             }
 
             Text(focus.title)
-                .font(.system(size: 16, weight: .medium, design: .serif))
+                .font(.system(size: 17, weight: .medium, design: .serif)) // was 16
                 .foregroundColor(AppTheme.textPrimary)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(focus.body)
-                .font(.system(size: 13))
+                .font(.system(size: 14)) // was 13
                 .foregroundColor(AppTheme.textSecondary)
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
@@ -319,7 +331,7 @@ struct DashboardView: View {
                 } label: {
                     Text(period.rawValue)
                         .font(.system(
-                            size: 13,
+                            size: 14, // was 13
                             weight: vm.selectedPeriod == period ? .semibold : .regular
                         ))
                         .foregroundColor(
@@ -416,7 +428,7 @@ struct DashboardView: View {
                         VStack(spacing: 10) {
                             ProgressView()
                             Text("Loading latest video…")
-                                .font(.system(size: 12))
+                                .font(.system(size: 13)) // was 12
                                 .foregroundColor(AppTheme.textTertiary)
                         }
                     )
@@ -431,7 +443,7 @@ struct DashboardView: View {
                     .frame(height: 80)
                     .overlay(
                         Text("No videos found on this channel")
-                            .font(.system(size: 13))
+                            .font(.system(size: 14)) // was 13
                             .foregroundColor(AppTheme.textTertiary)
                     )
                     .overlay(
@@ -500,11 +512,11 @@ struct DashboardView: View {
                             .stroke(AppTheme.textTertiary, lineWidth: 1)
                             .frame(width: 20, height: 20)
                         Text("+")
-                            .font(.system(size: 14))
+                            .font(.system(size: 15)) // was 14
                             .foregroundColor(AppTheme.textTertiary)
                     }
                     Text("Add a custom goal")
-                        .font(.system(size: 13))
+                        .font(.system(size: 14)) // was 13
                         .foregroundColor(AppTheme.textTertiary)
                 }
                 .frame(maxWidth: .infinity)
@@ -563,7 +575,7 @@ struct DashboardView: View {
     // MARK: - Section label
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-                .font(.system(size: 16, weight: .semibold, design: .serif))
-                .foregroundColor(AppTheme.textPrimary)
+            .font(.system(size: 17, weight: .semibold, design: .serif)) // was 16
+            .foregroundColor(AppTheme.textPrimary)
     }
 }

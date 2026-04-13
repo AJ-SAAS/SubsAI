@@ -15,29 +15,32 @@ struct SignInView: View {
 
                 Spacer()
 
-                // Logo / wordmark
-                VStack(spacing: 12) {
+                // Logo / Wordmark - Aligned with WelcomeView style
+                VStack(spacing: 16) {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 20)
+                        RoundedRectangle(cornerRadius: 24)
                             .fill(AppTheme.accent.opacity(0.12))
-                            .frame(width: 72, height: 72)
+                            .frame(width: 88, height: 88)
+                        
                         Image(systemName: "chart.line.uptrend.xyaxis")
-                            .font(.system(size: 30))
+                            .font(.system(size: 38))
                             .foregroundColor(AppTheme.accent)
                     }
 
                     Text("SubsAI")
-                        .font(.system(size: 32, weight: .medium, design: .serif))
+                        .font(.system(size: 34, weight: .medium, design: .serif))
                         .foregroundColor(AppTheme.textPrimary)
 
                     Text("Know what to fix before your next upload.")
-                        .font(.system(size: 15))
+                        .font(.system(size: 15.5))
                         .foregroundColor(AppTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
                 }
-                .padding(.bottom, 56)
+                .padding(.bottom, 60)
 
                 // Sign in buttons
-                VStack(spacing: 12) {
+                VStack(spacing: 14) {
 
                     // Sign in with Apple
                     SignInWithAppleButton(.signIn) { request in
@@ -46,51 +49,51 @@ struct SignInView: View {
                         AuthManager.shared.handleAppleSignIn(result: result)
                     }
                     .signInWithAppleButtonStyle(.black)
-                    .frame(height: 52)
-                    .cornerRadius(14)
+                    .frame(height: 54)
+                    .cornerRadius(16)
 
                     // Sign in with Google
                     Button {
                         signInWithGoogle()
                     } label: {
-                        HStack(spacing: 10) {
+                        HStack(spacing: 12) {
                             Image(systemName: "globe")
-                                .font(.system(size: 16))
+                                .font(.system(size: 18))
                                 .foregroundColor(AppTheme.textPrimary)
                             Text("Continue with Google")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(AppTheme.textPrimary)
                         }
                         .frame(maxWidth: .infinity)
-                        .frame(height: 52)
+                        .frame(height: 54)
                         .background(AppTheme.cardBackground)
-                        .cornerRadius(14)
+                        .cornerRadius(16)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(AppTheme.borderSubtle, lineWidth: 0.5)
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(AppTheme.borderSubtle, lineWidth: 0.8)
                         )
                     }
                     .disabled(isLoading)
 
-                    // NEW: Demo Account button (safe, uses same style)
+                    // Demo Account Button - Consistent styling
                     Button {
                         continueWithDemoAccount()
                     } label: {
-                        HStack(spacing: 10) {
+                        HStack(spacing: 12) {
                             Image(systemName: "sparkles")
-                                .font(.system(size: 16))
+                                .font(.system(size: 18))
                                 .foregroundColor(AppTheme.accent)
                             Text("Continue with Demo Account")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(AppTheme.textPrimary)
                         }
                         .frame(maxWidth: .infinity)
-                        .frame(height: 52)
+                        .frame(height: 54)
                         .background(AppTheme.cardBackground)
-                        .cornerRadius(14)
+                        .cornerRadius(16)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(AppTheme.borderSubtle, lineWidth: 0.5)
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(AppTheme.borderSubtle, lineWidth: 0.8)
                         )
                     }
                     .disabled(isLoading)
@@ -99,30 +102,31 @@ struct SignInView: View {
 
                 if let error = errorMessage {
                     Text(error)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundColor(.red)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 32)
-                        .padding(.top, 12)
+                        .padding(.top, 16)
                 }
 
                 Spacer()
 
-                // Legal
+                // Legal footer
                 VStack(spacing: 4) {
                     Text("By continuing you agree to our")
-                        .font(.system(size: 11))
+                        .font(.system(size: 11.5))
                         .foregroundColor(AppTheme.textTertiary)
+                    
                     HStack(spacing: 4) {
                         Link("Privacy Policy", destination: URL(string: "https://subsai.app/privacy")!)
                         Text("and")
                             .foregroundColor(AppTheme.textTertiary)
                         Link("Terms of Use", destination: URL(string: "https://subsai.app/terms")!)
                     }
-                    .font(.system(size: 11))
+                    .font(.system(size: 11.5))
                     .foregroundColor(AppTheme.accent)
                 }
-                .padding(.bottom, 40)
+                .padding(.bottom, 48)
             }
         }
     }
@@ -154,7 +158,6 @@ struct SignInView: View {
         }
     }
 
-    // NEW: Demo account entry (very safe)
     private func continueWithDemoAccount() {
         AuthManager.shared.enterDemoMode()
     }

@@ -126,6 +126,21 @@ final class AuthManager: NSObject, ObservableObject {
         NotificationCenter.default.post(name: .signInGoogleCompleted, object: nil)
     }
 
+    // MARK: - NEW: Exit Demo Mode and return to Sign In
+    func exitDemoMode() {
+        isDemoMode = false
+        UserDefaults.standard.removeObject(forKey: demoModeKey)
+        
+        // Clear demo user if needed
+        if currentUser?.id == "demo-user" {
+            currentUser = nil
+            UserDefaults.standard.removeObject(forKey: userKey)
+        }
+        
+        // Notify the app to go back to SignInView
+        NotificationCenter.default.post(name: .userSignedOut, object: nil)
+    }
+
     // MARK: - Get valid token (serialised — only one refresh in flight at a time)
     func getValidToken() async throws -> String {
         if let existing = refreshTask {
