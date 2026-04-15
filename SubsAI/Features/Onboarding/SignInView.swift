@@ -15,17 +15,14 @@ struct SignInView: View {
 
                 Spacer()
 
-                // Logo / Wordmark - Aligned with WelcomeView style
+                // Logo / Wordmark
                 VStack(spacing: 16) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 24)
-                            .fill(AppTheme.accent.opacity(0.12))
-                            .frame(width: 88, height: 88)
-                        
-                        Image(systemName: "chart.line.uptrend.xyaxis")
-                            .font(.system(size: 38))
-                            .foregroundColor(AppTheme.accent)
-                    }
+                    Image("AppIconImage")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 88, height: 88)
+                        .clipShape(RoundedRectangle(cornerRadius: 24))
+                        .shadow(color: AppTheme.accent.opacity(0.3), radius: 20, x: 0, y: 8)
 
                     Text("SubsAI")
                         .font(.system(size: 34, weight: .medium, design: .serif))
@@ -75,7 +72,7 @@ struct SignInView: View {
                     }
                     .disabled(isLoading)
 
-                    // Demo Account Button - Consistent styling
+                    // Demo Account Button
                     Button {
                         continueWithDemoAccount()
                     } label: {
@@ -116,12 +113,12 @@ struct SignInView: View {
                     Text("By continuing you agree to our")
                         .font(.system(size: 11.5))
                         .foregroundColor(AppTheme.textTertiary)
-                    
+
                     HStack(spacing: 4) {
-                        Link("Privacy Policy", destination: URL(string: "https://subsai.app/privacy")!)
+                        Link("Privacy Policy", destination: URL(string: "https://www.trysubsai.com/r/privacy")!)
                         Text("and")
                             .foregroundColor(AppTheme.textTertiary)
-                        Link("Terms of Use", destination: URL(string: "https://subsai.app/terms")!)
+                        Link("Terms of Use", destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
                     }
                     .font(.system(size: 11.5))
                     .foregroundColor(AppTheme.accent)
