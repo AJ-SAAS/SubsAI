@@ -157,7 +157,7 @@ struct PaywallView: View {
                             Link("Terms", destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
                                 .foregroundColor(.white)
                             
-                            Link("Privacy", destination: URL(string: "https://subsai.app/privacy")!)
+                            Link("Privacy", destination: URL(string: "https://www.trysubsai.com/r/privacy")!)
                                 .foregroundColor(.white)
                         }
                         .font(.system(size: 13))

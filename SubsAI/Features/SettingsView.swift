@@ -248,12 +248,12 @@ struct SettingsView: View {
                         .font(.title2)
                         .foregroundStyle(.white)
                 }
-                Text("Unlocked ✨ All access to deep analytics, channel & video insights, growth tools and more.")
+                Text("Unlocked ⚡ All access to deep analytics, channel & video insights, growth tools and more.")
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.95))
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("Upgrade to SubsAI Premium")
+                Text("⚡Upgrade to SubsAI Premium")
                     .font(.title2.bold())
                     .foregroundStyle(.white)
                 Text("Unlock all access to deep analytics, channel & video insights, growth tools and more.")

@@ -8,18 +8,18 @@ struct WelcomeView: View {
     private let pages: [WelcomePage] = [
         WelcomePage(
             imageName: "subsaipw5",
-            headline: "Know exactly what's working",
-            body: "See which videos are growing your channel and which ones are holding you back — with real data from your own channel."
+            headline: "Most of your videos are losing you subscribers",
+            body: "Find out which ones — in 60 seconds."
         ),
         WelcomePage(
             imageName: "subsaipw2",
-            headline: "A coach, not just a dashboard",
-            body: "SubsAI tells you exactly what to fix before your next upload — specific, actionable insights based on your patterns."
+            headline: "Your next video could 10x your channel",
+            body: "We tell you exactly what to fix. You go film it."
         ),
         WelcomePage(
             imageName: "subsaipw3",
-            headline: "Built for creators who are serious",
-            body: "Stop guessing why some videos pop and others don't. Your data already knows the answer."
+            headline: "More views. More subscribers. Less guessing.",
+            body: "Your data knows why. We'll show you."
         )
     ]
 
@@ -105,24 +105,31 @@ struct WelcomeView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(maxWidth: .infinity)
-                .frame(height: 420)                    // Big and impactful
+                .frame(height: 420)
                 .cornerRadius(28)
                 .shadow(color: AppTheme.accent.opacity(0.15), radius: 25, x: 0, y: 12)
                 .padding(.horizontal, 20)
 
             VStack(spacing: 16) {
+
+                // HEADLINE FIXED
                 Text(page.headline)
                     .font(.system(size: 27, weight: .medium, design: .serif))
                     .foregroundColor(AppTheme.textPrimary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(4)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 20)
 
+                // BODY FIXED
                 Text(page.body)
                     .font(.system(size: 16))
                     .foregroundColor(AppTheme.textSecondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(6)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 32)
             }
 
