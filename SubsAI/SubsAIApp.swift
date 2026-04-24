@@ -54,15 +54,16 @@ struct SubsAIApp: App {
                         }
                     }
                 }
-                // ✅ FIXED: Paywall using fullScreenCover (works reliably with your flow)
                 else if showPaywallAfterOnboarding && !purchaseVM.isPremium {
-                    // Placeholder view while the cover is presented
                     MainTabView()
                         .fullScreenCover(isPresented: $showPaywallAfterOnboarding) {
                             PaywallView()
+                                .presentationBackground(.ultraThinMaterial)           // Beautiful blur behind
+                                .presentationCornerRadius(28)                         // Nice rounded modern look
+                                .presentationDragIndicator(.visible)                  // Shows handle at top
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
                         .onDisappear {
-                            // Refresh premium status after X button or successful purchase
                             purchaseVM.checkSubscriptionStatus()
                         }
                 }
@@ -70,6 +71,7 @@ struct SubsAIApp: App {
                     MainTabView()
                 }
             }
+            .preferredColorScheme(.dark)   // ← This is the key line
             .animation(.easeInOut(duration: 0.35), value: showingSplash)
             .animation(.easeInOut(duration: 0.35), value: hasSeenWelcome)
             .animation(.easeInOut(duration: 0.35), value: auth.isSignedIn)

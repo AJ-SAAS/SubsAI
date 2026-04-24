@@ -3,7 +3,6 @@ import GoogleSignIn
 import AuthenticationServices
 
 struct SignInView: View {
-
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var shimmer = false
@@ -19,7 +18,7 @@ struct SignInView: View {
                 // MARK: - Header
                 VStack(spacing: 16) {
 
-                    // ICON WITH PREMIUM SHINE
+                    // ICON WITH IMPROVED SHIMMER
                     ZStack {
                         Image("AppIconImage")
                             .resizable()
@@ -33,11 +32,11 @@ struct SignInView: View {
                             )
                     }
 
-                    // MATCHED FONT STYLE (no serif mismatch)
                     Text("Ready to unlock faster YouTube growth?")
-                        .font(.system(size: 28, weight: .medium))
+                        .font(.system(size: 30, weight: .medium))   // Increased by 2px
                         .foregroundColor(AppTheme.textPrimary)
                         .multilineTextAlignment(.center)
+                        .padding(.horizontal, 20)
 
                     Text("Sign in to get personalized insights for your channel.")
                         .font(.system(size: 15.5))
@@ -45,12 +44,11 @@ struct SignInView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
                 }
-                .padding(.bottom, 60)
+                .padding(.bottom, 50)
 
                 // MARK: - Buttons
                 VStack(spacing: 14) {
 
-                    // Apple
                     SignInWithAppleButton(.signIn) { request in
                         request.requestedScopes = [.fullName, .email]
                     } onCompletion: { result in
@@ -60,14 +58,11 @@ struct SignInView: View {
                     .frame(height: 54)
                     .cornerRadius(16)
 
-                    // GOOGLE (center aligned properly)
                     Button {
                         signInWithGoogle()
                     } label: {
 
                         ZStack {
-
-                            // centered content group
                             HStack(spacing: 10) {
                                 Image("Googleicon")
                                     .resizable()
@@ -79,7 +74,6 @@ struct SignInView: View {
                                     .foregroundColor(.black)
                             }
 
-                            // right arrow overlay (doesn't affect centering)
                             HStack {
                                 Spacer()
 
@@ -102,18 +96,8 @@ struct SignInView: View {
 
                     Text("Recommended for YouTube creators")
                         .font(.system(size: 12))
-                        .foregroundColor(AppTheme.textTertiary)
-                        .padding(.top, -6)
-
-                    // DEMO LINK
-                    Button {
-                        continueWithDemoAccount()
-                    } label: {
-                        Text("Try demo account")
-                            .font(.system(size: 14.5))
-                            .foregroundColor(Color.blue)
-                    }
-                    .padding(.top, 6)
+                        .foregroundColor(.white.opacity(0.55))   // Lighter gray - much more readable
+                        .padding(.top, -4)
                 }
                 .padding(.horizontal, 32)
 
@@ -128,20 +112,30 @@ struct SignInView: View {
 
                 Spacer()
 
-                // Footer
-                VStack(spacing: 4) {
-                    Text("By continuing you agree to our")
-                        .font(.system(size: 11.5))
-                        .foregroundColor(AppTheme.textTertiary)
-
-                    HStack(spacing: 4) {
-                        Link("Privacy Policy", destination: URL(string: "https://www.trysubsai.com/r/privacy")!)
-                        Text("and")
-                            .foregroundColor(AppTheme.textTertiary)
-                        Link("Terms of Use", destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
+                // MARK: - Footer + Demo Link (Moved Lower)
+                VStack(spacing: 12) {
+                    Button {
+                        continueWithDemoAccount()
+                    } label: {
+                        Text("Try demo account")
+                            .font(.system(size: 14.5))
+                            .foregroundColor(AppTheme.accent)
                     }
-                    .font(.system(size: 11.5))
-                    .foregroundColor(AppTheme.accent)
+
+                    VStack(spacing: 4) {
+                        Text("By continuing you agree to our")
+                            .font(.system(size: 11.5))
+                            .foregroundColor(AppTheme.textTertiary)
+
+                        HStack(spacing: 4) {
+                            Link("Privacy Policy", destination: URL(string: "https://www.trysubsai.com/r/privacy")!)
+                            Text("and")
+                                .foregroundColor(AppTheme.textTertiary)
+                            Link("Terms of Use", destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
+                        }
+                        .font(.system(size: 11.5))
+                        .foregroundColor(AppTheme.accent)
+                    }
                 }
                 .padding(.bottom, 48)
             }
@@ -151,42 +145,37 @@ struct SignInView: View {
         }
     }
 
-    // MARK: - PREMIUM SHINE (fixed, icon-only)
+    // MARK: - IMPROVED SHIMMER EFFECT
     private func shimmerOverlay() -> some View {
         GeometryReader { geo in
             let width = geo.size.width
 
-            ZStack {
-
-                LinearGradient(
-                    colors: [
-                        .clear,
-                        Color.white.opacity(0.12),
-                        Color.white.opacity(0.25),
-                        Color.white.opacity(0.12),
-                        .clear
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .rotationEffect(.degrees(25))
-
-                Rectangle()
-                    .fill(Color.white.opacity(0.35))
-                    .frame(width: width * 0.18)
-                    .blur(radius: 4)
-                    .rotationEffect(.degrees(25))
-            }
-            .offset(x: shimmer ? width * 1.3 : -width * 1.3)
+            LinearGradient(
+                gradient: Gradient(stops: [
+                    .init(color: .clear, location: 0.0),
+                    .init(color: .clear, location: 0.30),
+                    .init(color: Color.white.opacity(0.12), location: 0.45),
+                    .init(color: Color.white.opacity(0.45), location: 0.52),   // Stronger peak
+                    .init(color: Color.white.opacity(0.12), location: 0.58),
+                    .init(color: .clear, location: 0.70),
+                    .init(color: .clear, location: 1.0)
+                ]),
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: width * 1.8)
+            .blur(radius: 6)
+            .rotationEffect(.degrees(30))
+            .offset(x: shimmer ? width * 1.8 : -width * 1.2)
             .animation(
                 .easeInOut(duration: 2.8)
-                    .delay(1.2)
+                    .delay(0.8)
                     .repeatForever(autoreverses: false),
                 value: shimmer
             )
         }
-        .clipped()
         .blendMode(.screen)
+        .opacity(0.75)
     }
 
     // MARK: - Google Sign In

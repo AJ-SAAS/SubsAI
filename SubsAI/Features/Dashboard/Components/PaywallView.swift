@@ -8,14 +8,14 @@ struct PaywallView: View {
     
     @State private var selectedPlan: PlanType = .yearly
     @State private var currentCardIndex: Int = 0
-    @State private var timer = Timer.publish(every: 2.5, on: .main, in: .common).autoconnect()
+    @State private var timer = Timer.publish(every: 2.8, on: .main, in: .common).autoconnect()
     
     private let benefitCards: [BenefitCard] = [
-        BenefitCard(imageName: "subsaipw1", title: "GROW FASTER", description: "Stop guessing. Know exactly what works on your channel."),
-        BenefitCard(imageName: "subsaipw2", title: "REAL SUBSCRIBER GROWTH", description: "See which videos actually bring subscribers — not just views."),
-        BenefitCard(imageName: "subsaipw3", title: "FIX DROP-OFFS", description: "Discover exactly why viewers leave and how to keep them watching."),
-        BenefitCard(imageName: "subsaipw4", title: "REPEAT YOUR WINNERS", description: "Find your best performing patterns and replicate them."),
-        BenefitCard(imageName: "subsaipw5", title: "POST WITH CONFIDENCE", description: "Every upload backed by your own channel data.")
+        BenefitCard(icon: "chart.line.uptrend.xyaxis", title: "GROW FASTER", description: "Stop guessing. Know exactly what works on your channel."),
+        BenefitCard(icon: "person.2.fill", title: "REAL SUBSCRIBER GROWTH", description: "See which videos actually bring subscribers — not just views."),
+        BenefitCard(icon: "timer", title: "FIX DROP-OFFS", description: "Discover exactly why viewers leave and how to keep them watching."),
+        BenefitCard(icon: "arrow.triangle.2.circlepath", title: "REPEAT YOUR WINNERS", description: "Find your best performing patterns and replicate them."),
+        BenefitCard(icon: "bolt.fill", title: "POST WITH CONFIDENCE", description: "Every upload backed by your own channel data.")
     ]
     
     enum PlanType {
@@ -27,18 +27,17 @@ struct PaywallView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 0) {
                     
-                    // Hero Header
+                    // Hero Header - Smaller Image
                     Color.black
-                        .ignoresSafeArea(edges: .top)
-                        .frame(height: 300)
+                        .frame(height: 260)                    // Reduced height
                         .overlay(
-                            VStack(spacing: 10) {
-                                Spacer().frame(height: 40)
+                            VStack(spacing: 12) {
+                                Spacer().frame(height: 30)
                                 
                                 Image("subsai1")
                                     .resizable()
                                     .scaledToFit()
-                                    .frame(width: 180, height: 180)
+                                    .frame(width: 140, height: 140)   // ← Smaller size
                                     .cornerRadius(20)
                                 
                                 (
@@ -61,12 +60,12 @@ struct PaywallView: View {
                                 .font(.system(size: 20, weight: .bold))
                                 .multilineTextAlignment(.center)
                                 .lineLimit(2)
-                                .minimumScaleFactor(0.8)
+                                .minimumScaleFactor(0.85)
                                 .padding(.horizontal, 40)
                             }
                         )
                     
-                    // Benefit Cards - Dark Purple
+                    // Benefit Cards
                     VStack(spacing: 12) {
                         TabView(selection: $currentCardIndex) {
                             ForEach(Array(benefitCards.enumerated()), id: \.element.id) { index, card in
@@ -75,10 +74,10 @@ struct PaywallView: View {
                             }
                         }
                         .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
-                        .frame(height: 125)
+                        .frame(height: 130)
                         .padding(.horizontal, 20)
                         .onReceive(timer) { _ in
-                            withAnimation {
+                            withAnimation(.easeInOut(duration: 0.6)) {
                                 currentCardIndex = (currentCardIndex + 1) % benefitCards.count
                             }
                         }
@@ -91,10 +90,10 @@ struct PaywallView: View {
                                            height: index == currentCardIndex ? 9 : 7)
                             }
                         }
-                        .padding(.top, 0)
+                        .padding(.top, 4)
                     }
-                    .padding(.top, 8)
-                    .padding(.bottom, 6)
+                    .padding(.top, 12)
+                    .padding(.bottom, 20)
                     
                     // Plan Selection
                     VStack(spacing: 14) {
@@ -164,16 +163,20 @@ struct PaywallView: View {
                         .padding(.top, 8)
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 20)
+                    .padding(.bottom, 40)
                 }
             }
             
-            // X Close Button
+            // Close Button
             Button(action: { dismiss() }) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 32))
-                    .foregroundColor(.white.opacity(0.9))
-                    .shadow(radius: 3)
+                    .font(.system(size: 34))
+                    .foregroundColor(.white.opacity(0.85))
+                    .background(
+                        Circle()
+                            .fill(Color.black.opacity(0.6))
+                            .frame(width: 44, height: 44)
+                    )
             }
             .padding(.top, 54)
             .padding(.leading, 20)
@@ -199,37 +202,7 @@ struct PaywallView: View {
     }
 }
 
-// MARK: - Supporting Views
-
-struct BenefitCardView: View {
-    let card: BenefitCard
-    
-    var body: some View {
-        HStack(spacing: 16) {
-            Image(card.imageName)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 72, height: 72)
-            
-            VStack(alignment: .leading, spacing: 6) {
-                Text(card.title)
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundColor(.white)
-                    .textCase(.uppercase)
-                
-                Text(card.description)
-                    .font(.system(size: 13.5))
-                    .foregroundColor(Color.white.opacity(0.7))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer()
-        }
-        .padding(16)
-        .background(AppTheme.darkCardPurple)
-        .cornerRadius(20)
-    }
-}
-
+// MARK: - Supporting Views (Shimmer Badge + Benefit Card)
 struct PlanCardView: View {
     let title: String
     let subtitle: String
@@ -269,7 +242,7 @@ struct PlanCardView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 18)
-                .background(Color(hex: "#1a1a1a"))   // Solid dark grey — not opacity-based
+                .background(Color(hex: "#1a1a1a"))
                 .cornerRadius(20)
                 .overlay(
                     RoundedRectangle(cornerRadius: 20)
@@ -282,9 +255,14 @@ struct PlanCardView: View {
                 Text(badge)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(AppTheme.accent)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        ZStack {
+                            AppTheme.accent
+                            ShimmerBadge()
+                        }
+                    )
                     .cornerRadius(10)
                     .offset(x: -12, y: -10)
             }
@@ -292,9 +270,67 @@ struct PlanCardView: View {
     }
 }
 
+// MARK: - Slower Natural Shimmer
+struct ShimmerBadge: View {
+    @State private var phase: CGFloat = -1.0
+    
+    var body: some View {
+        LinearGradient(
+            colors: [
+                .clear,
+                Color.white.opacity(0.40),
+                .clear
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+        .rotationEffect(.degrees(30))
+        .offset(x: phase * 140)
+        .animation(
+            .linear(duration: 2.6)           // Slower & more elegant
+                .repeatForever(autoreverses: false),
+            value: phase
+        )
+        .onAppear {
+            phase = 1.0
+        }
+        .mask(
+            RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+struct BenefitCardView: View {
+    let card: BenefitCard
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: card.icon)
+                .font(.system(size: 38, weight: .regular))
+                .foregroundColor(AppTheme.accent)
+                .frame(width: 72, height: 72)
+            
+            VStack(alignment: .leading, spacing: 6) {
+                Text(card.title)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(.white)
+                    .textCase(.uppercase)
+                
+                Text(card.description)
+                    .font(.system(size: 13.5))
+                    .foregroundColor(Color.white.opacity(0.75))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .padding(18)
+        .background(AppTheme.darkCardPurple)
+        .cornerRadius(20)
+    }
+}
+
 struct BenefitCard: Identifiable {
     let id = UUID()
-    let imageName: String
+    let icon: String
     let title: String
     let description: String
 }

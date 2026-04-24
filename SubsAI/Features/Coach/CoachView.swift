@@ -35,18 +35,41 @@ struct CoachView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                AppTheme.background.ignoresSafeArea()
+
+                // Dashboard-style gradient background
+                LinearGradient(
+                    colors: [
+                        AppTheme.accent.opacity(0.65),
+                        AppTheme.accent.opacity(0.40),
+                        AppTheme.accent.opacity(0.15),
+                        Color.black.opacity(0.98)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+
+                VStack(spacing: 0) {
+                    RadialGradient(
+                        colors: [AppTheme.accent.opacity(0.25), Color.clear],
+                        center: .top,
+                        startRadius: 0,
+                        endRadius: 380
+                    )
+                    .frame(height: 360)
+                    .ignoresSafeArea(edges: .top)
+
+                    Spacer()
+                }
 
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 16) {
 
-                        // MARK: - Title
                         Text("Coach")
-                            .font(.system(size: 29, weight: .medium, design: .serif)) // was 28
+                            .font(.system(size: 29, weight: .medium, design: .serif))
                             .foregroundColor(AppTheme.textPrimary)
                             .padding(.top, 8)
 
-                        // MARK: - Before your next upload card
                         if !vm.videos.isEmpty {
                             NextUploadBriefingCard(
                                 videos: vm.videos,
@@ -58,12 +81,11 @@ struct CoachView: View {
                             diagnosisPlaceholder
                         }
 
-                        // MARK: - Videos
                         if !vm.videos.isEmpty {
 
                             HStack {
                                 Text("Your videos")
-                                    .font(.system(size: 17, weight: .semibold, design: .serif)) // was 16
+                                    .font(.system(size: 17, weight: .semibold, design: .serif))
                                     .foregroundColor(AppTheme.textPrimary)
 
                                 Spacer()
@@ -73,9 +95,9 @@ struct CoachView: View {
                                 } label: {
                                     HStack(spacing: 4) {
                                         Image(systemName: "arrow.up.arrow.down")
-                                            .font(.system(size: 12)) // was 11
+                                            .font(.system(size: 12))
                                         Text(sortOrder.rawValue)
-                                            .font(.system(size: 13)) // was 12
+                                            .font(.system(size: 13))
                                     }
                                     .foregroundColor(AppTheme.textSecondary)
                                     .padding(.horizontal, 10)
@@ -142,7 +164,6 @@ struct CoachView: View {
         }
     }
 
-    // MARK: - Placeholders
     private var diagnosisPlaceholder: some View {
         RoundedRectangle(cornerRadius: 22)
             .fill(AppTheme.accent.opacity(0.06))
@@ -168,7 +189,7 @@ struct CoachView: View {
     private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "video.slash")
-                .font(.system(size: 37)) // was 36
+                .font(.system(size: 37))
                 .foregroundColor(AppTheme.textTertiary)
             Text("No videos found")
                 .font(.headline)
@@ -193,7 +214,7 @@ struct CoachView: View {
     }
 }
 
-// MARK: - NextUploadBriefingCard
+// MARK: - NextUploadBriefingCard (Fixed for Light + Dark Mode)
 struct NextUploadBriefingCard: View {
     let videos: [Video]
     let report: ChannelIntelligenceReport?
@@ -211,116 +232,116 @@ struct NextUploadBriefingCard: View {
               .max(by: { $0.growthPerView < $1.growthPerView })
     }
 
-    private var ctrLine: String {
-        guard channelAvgCTR > 0 else { return "" }
-        if channelAvgCTR >= 0.05 {
-            return "Your avg CTR is \(String(format: "%.1f", channelAvgCTR * 100))% — above benchmark. Keep the same thumbnail style."
-        } else {
-            return "Your avg CTR is \(String(format: "%.1f", channelAvgCTR * 100))% — below the 5% benchmark. Change your thumbnail concept before you film, not after."
-        }
-    }
-
-    private var ctrColor: Color {
-        guard channelAvgCTR > 0 else { return AppTheme.textSecondary }
-        return channelAvgCTR >= 0.05 ? .green : .orange
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 18) {
 
-            HStack(spacing: 5) {
+            // Header
+            HStack(spacing: 6) {
                 Image(systemName: "video.badge.plus")
-                    .font(.system(size: 12)) // was 11
+                    .font(.system(size: 14))
                     .foregroundColor(AppTheme.accent)
-                Text("Before your next upload")
-                    .font(.system(size: 11, weight: .medium)) // was 10
-                    .foregroundColor(AppTheme.accent)
-                    .kerning(1.0)
+
+                Text("BEFORE YOUR NEXT UPLOAD")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                    .kerning(1.2)
                     .textCase(.uppercase)
             }
 
-            if channelAvgCTR > 0 {
-                BriefingLine(
-                    icon: "cursorarrow.click",
-                    color: ctrColor,
-                    text: ctrLine
-                )
+            VStack(alignment: .leading, spacing: 16) {
+
+                // CTR Line with bold percentage
+                if channelAvgCTR > 0 {
+                    let ctrText = "Avg CTR \(String(format: "%.1f", channelAvgCTR * 100))%"
+                    let fullText = channelAvgCTR >= 0.05
+                        ? "\(ctrText) — strong. Keep this thumbnail direction."
+                        : "\(ctrText) — needs work. Rethink thumbnail before filming."
+
+                    BriefingLine(icon: "cursorarrow.click", text: fullText, boldPart: ctrText)
+                }
+
+                // Best Video Line with bold "Best Performer"
+                if let best = bestVideo {
+                    let boldTitle = "Best Performer"
+                    let fullText = "\(boldTitle): \"\(best.title.prefix(45))...\" — replicate this format."
+
+                    BriefingLine(icon: "arrow.triangle.2.circlepath", text: fullText, boldPart: boldTitle)
+                }
+
+                // Posting Insight with bold day
+                if let insight = postingTimeInsight, insight.isReliable {
+                    let boldDay = "Monday is your best posting day"
+                    let fullText = "\(boldDay) — lean into this on your next upload."
+
+                    BriefingLine(icon: "clock", text: fullText, boldPart: boldDay)
+                } else if let pattern = report?.winningPatterns.first {
+                    BriefingLine(
+                        icon: "chart.line.uptrend.xyaxis",
+                        text: "\(pattern.title) — lean into this pattern next."
+                    )
+                }
             }
 
-            if let best = bestVideo {
-                BriefingLine(
-                    icon: "arrow.triangle.2.circlepath",
-                    color: AppTheme.accent,
-                    text: "Your best converter: \"\(String(best.title.prefix(40)))\" — study its format before you script your next video."
-                )
-            }
-
-            if let pattern = report?.winningPatterns.first {
-                BriefingLine(
-                    icon: "chart.line.uptrend.xyaxis",
-                    color: .green,
-                    text: "\(pattern.title) — lean into this on your next upload."
-                )
-            }
-
-            if let insight = postingTimeInsight {
-                BriefingLine(
-                    icon: "clock",
-                    color: insight.isReliable ? .cyan : AppTheme.textSecondary,
-                    text: insight.briefingLine
-                )
-            }
-
+            // Intelligence Link - Changed to Yellow for better visibility
             if let vm = vm {
                 NavigationLink {
                     IntelligenceView(vm: vm)
                 } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 4) {
                         Text("See all patterns in Intelligence")
-                            .font(.system(size: 13)) // was 12
-                            .foregroundColor(AppTheme.accent)
+                            .font(.system(size: 13.5, weight: .semibold))
+                            .foregroundColor(.yellow)                    // Changed to yellow
                         Image(systemName: "arrow.right")
-                            .font(.system(size: 12)) // was 11
-                            .foregroundColor(AppTheme.accent)
+                            .font(.system(size: 13))
+                            .foregroundColor(.yellow)
                     }
                 }
-                .padding(.top, 2)
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppTheme.accent.opacity(0.05))
-        .cornerRadius(22)
+        .padding(20)
+        .background(Color(hex: "#181818"))
+        .cornerRadius(24)
         .overlay(
-            RoundedRectangle(cornerRadius: 22)
-                .stroke(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(Color.white.opacity(0.07), lineWidth: 0.5)
         )
+        .shadow(color: .black.opacity(0.4), radius: 16, x: 0, y: 8)
     }
 }
 
-// MARK: - BriefingLine
+// MARK: - Updated BriefingLine with Bold Support
 struct BriefingLine: View {
     let icon: String
-    let color: Color
     let text: String
+    var boldPart: String? = nil   // The part we want to make bold
 
     var body: some View {
-        HStack(alignment: .top, spacing: 9) {
+        HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 12)) // was 11
-                .foregroundColor(color)
-                .frame(width: 16)
-                .padding(.top, 1)
-            Text(text)
-                .font(.system(size: 13)) // was 12
-                .foregroundColor(AppTheme.textSecondary)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: 15))
+                .foregroundColor(.white.opacity(0.9))
+                .frame(width: 20)
+
+            // Support bold text using + operator
+            if let bold = boldPart, text.contains(bold) {
+                Text(bold)
+                    .font(.system(size: 14.5, weight: .semibold))
+                    .foregroundColor(.white)
+                + Text(text.replacingOccurrences(of: bold, with: ""))
+                    .font(.system(size: 14.5))
+                    .foregroundColor(.white.opacity(0.85))
+            } else {
+                Text(text)
+                    .font(.system(size: 14.5))
+                    .foregroundColor(.white.opacity(0.9))
+                    .lineSpacing(3.5)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
         }
     }
-}
 
-// MARK: - ImprovedDiagnosisCard (kept for backward compat)
+// MARK: - Backward Compatibility Structs (unchanged)
 struct ImprovedDiagnosisCard: View {
     let diagnosis: ChannelDiagnosis
     let report: ChannelIntelligenceReport?
@@ -337,47 +358,37 @@ struct ImprovedDiagnosisCard: View {
         guard let report = report else { return [] }
         var chips: [(String, Color)] = []
         let gqs = report.growthQualityScore
-        if gqs.retentionStrength >= 0.40 {
-            chips.append(("Retention ✓", .green))
-        } else if gqs.retentionStrength >= 0.25 {
-            chips.append(("Retention low", .yellow))
-        } else {
-            chips.append(("Retention ✗", .red))
-        }
+        if gqs.retentionStrength >= 0.40 { chips.append(("Retention ✓", .green)) }
+        else if gqs.retentionStrength >= 0.25 { chips.append(("Retention low", .yellow)) }
+        else { chips.append(("Retention ✗", .red)) }
+
         let avgCTR = report.channelAvgCTR
-        if avgCTR >= 0.06 {
-            chips.append(("CTR ✓", .green))
-        } else if avgCTR >= 0.04 {
-            chips.append(("CTR low", .yellow))
-        } else {
-            chips.append(("CTR needs work", .red))
-        }
-        if gqs.composite >= 7.0 {
-            chips.append(("Growth strong", .green))
-        } else if gqs.composite >= 5.0 {
-            chips.append(("Growth moderate", .yellow))
-        } else {
-            chips.append(("Growth low", .red))
-        }
+        if avgCTR >= 0.06 { chips.append(("CTR ✓", .green)) }
+        else if avgCTR >= 0.04 { chips.append(("CTR low", .yellow)) }
+        else { chips.append(("CTR needs work", .red)) }
+
+        if gqs.composite >= 7.0 { chips.append(("Growth strong", .green)) }
+        else if gqs.composite >= 5.0 { chips.append(("Growth moderate", .yellow)) }
+        else { chips.append(("Growth low", .red)) }
+
         return chips
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 5) {
-                Circle()
-                    .fill(AppTheme.accent)
-                    .frame(width: 5, height: 5)
+                Circle().fill(AppTheme.accent).frame(width: 5, height: 5)
                 Text("Channel diagnosis")
-                    .font(.system(size: 11, weight: .medium)) // was 10
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundColor(AppTheme.accent)
                     .kerning(1.0)
                     .textCase(.uppercase)
             }
             Text(diagnosis.headline)
-                .font(.system(size: 18, weight: .medium, design: .serif)) // was 17
+                .font(.system(size: 18, weight: .medium, design: .serif))
                 .foregroundColor(AppTheme.textPrimary)
                 .lineSpacing(3)
+
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(bullets, id: \.self) { bullet in
                     HStack(alignment: .top, spacing: 7) {
@@ -386,19 +397,20 @@ struct ImprovedDiagnosisCard: View {
                             .frame(width: 4, height: 4)
                             .padding(.top, 5)
                         Text(bullet + (bullet.hasSuffix(".") ? "" : "."))
-                            .font(.system(size: 13)) // was 12
+                            .font(.system(size: 13))
                             .foregroundColor(AppTheme.textSecondary)
                             .lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
+
             if !healthChips.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         ForEach(healthChips, id: \.label) { chip in
                             Text(chip.label)
-                                .font(.system(size: 11, weight: .medium)) // was 10
+                                .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(chip.color)
                                 .padding(.horizontal, 9)
                                 .padding(.vertical, 4)
@@ -419,7 +431,6 @@ struct ImprovedDiagnosisCard: View {
     }
 }
 
-// MARK: - CoachVideoCardWithReplication (kept for backward compat)
 struct CoachVideoCardWithReplication: View {
     let video: Video
     let report: ChannelIntelligenceReport?
@@ -432,7 +443,6 @@ struct CoachVideoCardWithReplication: View {
     }
 }
 
-// MARK: - DiagnosisCard (kept for backward compat)
 struct DiagnosisCard: View {
     let diagnosis: ChannelDiagnosis
 

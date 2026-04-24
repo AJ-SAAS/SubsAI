@@ -87,12 +87,11 @@ struct WelcomeView: View {
                     }
                     .padding(.top, 16)
                     
-                    // ❌ REMOVED BAD SPACER HERE
-                    
                     TabView(selection: $currentPage) {
                         ForEach(Array(pages.enumerated()), id: \.offset) { index, page in
                             pageContent(page, index: index, geo: geo)
                                 .tag(index)
+                                .id(index)
                         }
                     }
                     .tabViewStyle(.page(indexDisplayMode: .never))
@@ -100,25 +99,15 @@ struct WelcomeView: View {
                     VStack(spacing: 18) {
                         
                         Button {
-                            
-                            DispatchQueue.main.async {
-                                
-                                if currentPage < pages.count - 1 {
-                                    
-                                    withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
-                                        currentPage += 1
-                                    }
-                                    
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                    }
-                                    
-                                } else {
-                                    UINotificationFeedbackGenerator().notificationOccurred(.success)
-                                    onContinue()
+                            if currentPage < pages.count - 1 {
+                                currentPage += 1
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                                 }
+                            } else {
+                                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                                onContinue()
                             }
-                            
                         } label: {
                             Text(buttonTitle)
                                 .font(.system(size: 18, weight: .semibold))
@@ -176,11 +165,11 @@ struct WelcomeView: View {
     
     private func pageContent(_ page: OnboardingPage, index: Int, geo: GeometryProxy) -> some View {
         
-        let imageSize = min(geo.size.width * 0.62, 300)
+        let imageSize = min(geo.size.width * 0.52, 260)   // Reduced size
         
         return VStack(spacing: 18) {
             
-            Spacer(minLength: 24) // ✅ CORRECT FIX
+            Spacer(minLength: 24)
             
             VStack(spacing: 12) {
                 
@@ -247,17 +236,18 @@ struct WelcomeView: View {
                 
             } else {
                 
+                // Light purple illustrations (less "in your face")
                 Image(systemName: page.illustration)
                     .resizable()
                     .scaledToFit()
                     .frame(width: imageSize, height: imageSize)
-                    .foregroundColor(.white)
+                    .foregroundColor(AppTheme.accent.opacity(0.75))   // Light purple
             }
             
             Spacer(minLength: 30)
         }
         .opacity(currentPage == index ? 1 : 0)
-        .animation(.easeInOut, value: currentPage)
+        .animation(.easeInOut(duration: 0.25), value: currentPage)
     }
 }
 
