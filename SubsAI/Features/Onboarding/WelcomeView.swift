@@ -1,163 +1,323 @@
 import SwiftUI
-import UIKit
 
 struct WelcomeView: View {
-
+    
     @State private var currentPage = 0
     @State private var animateIn = false
-
-    private let pages: [WelcomePage] = [
-        WelcomePage(
-            imageName: "subsaipw5",
-            headline: "Most of your videos are losing you subscribers",
-            body: "Find out which ones — in 60 seconds."
+    
+    private let pages: [OnboardingPage] = [
+        
+        OnboardingPage(
+            headline: "Welcome to SubsAI",
+            body: "The AI coach built for YouTubers who are ready to grow faster.",
+            quote: "I doubled my views with SubsAI",
+            illustration: "Person5",
+            trustLine: "Built for monetized YouTube creators",
+            trustAvatar: "AppIconImage",
+            isFinal: false
         ),
-        WelcomePage(
-            imageName: "subsaipw2",
-            headline: "Your next video could 10x your channel",
-            body: "We tell you exactly what to fix. You go film it."
+        
+        OnboardingPage(
+            headline: "You're posting. Now let's grow.",
+            body: "You've done the hard part. SubsAI shows you exactly what to do next.",
+            quote: "Best YouTube coach I’ve used",
+            illustration: "chart.bar.xaxis",
+            trustLine: "\"Best YouTube coach I’ve used\"",
+            trustAvatar: "Person1",
+            isFinal: false
         ),
-        WelcomePage(
-            imageName: "subsaipw3",
-            headline: "More views. More subscribers. Less guessing.",
-            body: "Your data knows why. We'll show you."
+        
+        OnboardingPage(
+            headline: "Find the pattern in your top videos",
+            body: "Your best videos already know the formula. We just show you what it is.",
+            quote: "I wish I had this sooner.",
+            illustration: "waveform.path.ecg",
+            trustLine: "\"I wish I had this sooner.\"",
+            trustAvatar: "Person2",
+            isFinal: false
+        ),
+        
+        OnboardingPage(
+            headline: "Turn good videos into great ones",
+            body: "Small tweaks to titles, hooks and structure — big jumps in views and revenue.",
+            quote: "It just works.",
+            illustration: "trophy.fill",
+            trustLine: "\"It just works.\"",
+            trustAvatar: "Person3",
+            isFinal: false
+        ),
+        
+        OnboardingPage(
+            headline: "Get your first insight in 60 seconds",
+            body: "Connect your channel. See instantly where your growth is hiding.",
+            quote: "I finally understand what’s driving my views.",
+            illustration: "bolt.fill",
+            trustLine: "\"I finally understand what’s driving my views.\"",
+            trustAvatar: "Person4",
+            isFinal: true
         )
     ]
-
+    
     var onContinue: () -> Void
-
+    
     var body: some View {
         GeometryReader { geo in
+            
             ZStack {
-                AppTheme.background.ignoresSafeArea()
-
+                
+                LinearGradient(
+                    colors: [
+                        Color.black,
+                        Color(.displayP3, red: 0.1, green: 0.0, blue: 0.25)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                
                 VStack(spacing: 0) {
-
-                    // Main Content
+                    
+                    // Progress
+                    HStack(spacing: 8) {
+                        ForEach(0..<pages.count, id: \.self) { index in
+                            Capsule()
+                                .fill(index == currentPage ? Color.white : Color.white.opacity(0.3))
+                                .frame(width: index == currentPage ? 28 : 8, height: 6)
+                        }
+                    }
+                    .padding(.top, 16)
+                    
+                    // ❌ REMOVED BAD SPACER HERE
+                    
                     TabView(selection: $currentPage) {
                         ForEach(Array(pages.enumerated()), id: \.offset) { index, page in
-                            pageView(page, index: index, availableHeight: geo.size.height)
+                            pageContent(page, index: index, geo: geo)
                                 .tag(index)
                         }
                     }
                     .tabViewStyle(.page(indexDisplayMode: .never))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    // Haptic on swipe
-                    .onChange(of: currentPage) { _ in
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    }
-
-                    // Page Indicators
-                    HStack(spacing: 8) {
-                        ForEach(0..<pages.count, id: \.self) { index in
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(index == currentPage ? AppTheme.accent : AppTheme.borderSubtle)
-                                .frame(width: index == currentPage ? 28 : 8, height: 8)
-                        }
-                    }
-                    .padding(.bottom, 24)
-
-                    // CTA Button
-                    Button {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-
-                        if currentPage < pages.count - 1 {
-                            withAnimation(.easeInOut(duration: 0.4)) {
-                                currentPage += 1
+                    
+                    VStack(spacing: 18) {
+                        
+                        Button {
+                            
+                            DispatchQueue.main.async {
+                                
+                                if currentPage < pages.count - 1 {
+                                    
+                                    withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) {
+                                        currentPage += 1
+                                    }
+                                    
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                    }
+                                    
+                                } else {
+                                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                                    onContinue()
+                                }
                             }
-                        } else {
-                            UINotificationFeedbackGenerator().notificationOccurred(.success)
-                            onContinue()
+                            
+                        } label: {
+                            Text(buttonTitle)
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 58)
+                                .background(
+                                    LinearGradient(
+                                        colors: [
+                                            Color.purple,
+                                            Color(red: 0.45, green: 0.2, blue: 0.9)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .cornerRadius(16)
                         }
-                    } label: {
-                        Text(buttonTitle)
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 58)
-                            .background(AppTheme.accent)
-                            .cornerRadius(16)
-                            .animation(.easeInOut(duration: 0.25), value: buttonTitle)
+                        .padding(.horizontal, 32)
+                        
+                        HStack(spacing: 10) {
+                            
+                            Image(pages[currentPage].trustAvatar)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 54, height: 54)
+                                .clipShape(Circle())
+                            
+                            Text(pages[currentPage].trustLine)
+                                .font(.system(size: 14, weight: .bold))
+                                .italic()
+                                .foregroundColor(.white)
+                                .minimumScaleFactor(0.75)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 40)
+                        .modifier(Shimmer())
                     }
-                    .frame(maxWidth: 500)
-                    .padding(.horizontal, 32)
-                    .padding(.bottom, geo.safeAreaInsets.bottom > 0 ? 16 : 34)
+                    .padding(.bottom, geo.safeAreaInsets.bottom + 20)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .opacity(animateIn ? 1 : 0)
-        .offset(y: animateIn ? 0 : 30)
+        .offset(y: animateIn ? 0 : 40)
         .onAppear {
-            withAnimation(.easeOut(duration: 0.6)) {
+            withAnimation(.easeOut(duration: 0.7)) {
                 animateIn = true
             }
         }
     }
-
-    // MARK: - Dynamic CTA Text
+    
     private var buttonTitle: String {
-        if currentPage == pages.count - 1 {
-            return "Launch 🚀"
-        } else if currentPage == pages.count - 2 {
-            return "Continue"
-        } else {
-            return "Next"
-        }
+        currentPage == pages.count - 1 ? "Start Growing 🚀" : "Continue"
     }
-
-    private func pageView(_ page: WelcomePage, index: Int, availableHeight: CGFloat) -> some View {
-        let imageHeight = min(availableHeight * 0.45, 420.0)
-
-        return VStack(spacing: 0) {
-
-            Spacer(minLength: 0)
-
-            Image(page.imageName)
-                .resizable()
-                .scaledToFit()
-                .frame(maxWidth: .infinity)
-                .frame(height: imageHeight)
-                .clipShape(RoundedRectangle(cornerRadius: 40)) // 👈 more rounded
-                .shadow(color: AppTheme.accent.opacity(0.12), radius: 30, x: 0, y: 15) // 👈 softer shadow
-                .padding(.horizontal, 20)
-
-            Spacer(minLength: 20)
-
-            VStack(spacing: 14) {
+    
+    private func pageContent(_ page: OnboardingPage, index: Int, geo: GeometryProxy) -> some View {
+        
+        let imageSize = min(geo.size.width * 0.62, 300)
+        
+        return VStack(spacing: 18) {
+            
+            Spacer(minLength: 24) // ✅ CORRECT FIX
+            
+            VStack(spacing: 12) {
+                
                 Text(page.headline)
-                    .font(.system(size: 27, weight: .medium, design: .serif))
-                    .foregroundColor(AppTheme.textPrimary)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(4)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .modifier(OnboardingHeadlineStyle())
                     .padding(.horizontal, 24)
-                    .opacity(currentPage == index ? 1 : 0)
-                    .offset(y: currentPage == index ? 0 : 20)
-                    .animation(.easeOut(duration: 0.5), value: currentPage)
-
+                
                 Text(page.body)
-                    .font(.system(size: 16))
-                    .foregroundColor(AppTheme.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(6)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 36)
-                    .opacity(currentPage == index ? 1 : 0)
-                    .offset(y: currentPage == index ? 0 : 20)
-                    .animation(.easeOut(duration: 0.6).delay(0.1), value: currentPage)
+                    .modifier(OnboardingBodyStyle())
+                    .padding(.horizontal, 24)
             }
-            .frame(maxWidth: 540)
-
-            Spacer(minLength: 60)
+            .frame(width: geo.size.width)
+            .fixedSize(horizontal: false, vertical: true)
+            
+            Spacer(minLength: 10)
+            
+            if page.illustration == "Person5" {
+                
+                VStack(spacing: 12) {
+                    
+                    ZStack {
+                        
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        Color.purple.opacity(0.35),
+                                        Color.blue.opacity(0.20),
+                                        .clear
+                                    ],
+                                    center: .center,
+                                    startRadius: 10,
+                                    endRadius: imageSize * 0.9
+                                )
+                            )
+                            .frame(width: imageSize * 1.4, height: imageSize * 1.4)
+                            .blur(radius: 20)
+                        
+                        Image("Person5")
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: imageSize, height: imageSize)
+                            .clipShape(Circle())
+                    }
+                    
+                    VStack(spacing: 6) {
+                        
+                        Text("\"\(page.quote)\"")
+                            .font(.system(size: 16, weight: .bold))
+                            .italic()
+                            .foregroundColor(.white.opacity(0.95))
+                            .multilineTextAlignment(.center)
+                            .minimumScaleFactor(0.75)
+                        
+                        HStack(spacing: 2) {
+                            ForEach(0..<5, id: \.self) { _ in
+                                Image(systemName: "star.fill")
+                                    .foregroundColor(.yellow)
+                                    .font(.system(size: 12))
+                            }
+                        }
+                    }
+                }
+                
+            } else {
+                
+                Image(systemName: page.illustration)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: imageSize, height: imageSize)
+                    .foregroundColor(.white)
+            }
+            
+            Spacer(minLength: 30)
         }
-        .padding(.top, 10)
+        .opacity(currentPage == index ? 1 : 0)
+        .animation(.easeInOut, value: currentPage)
     }
 }
 
-// MARK: - Model
-struct WelcomePage {
-    let imageName: String
+// MARK: - MODEL
+struct OnboardingPage {
     let headline: String
     let body: String
+    let quote: String
+    let illustration: String
+    let trustLine: String
+    let trustAvatar: String
+    let isFinal: Bool
+}
+
+// MARK: - TYPOGRAPHY
+struct OnboardingHeadlineStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .font(.system(size: 30, weight: .bold))
+            .foregroundColor(.white)
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .minimumScaleFactor(0.85)
+            .truncationMode(.tail)
+    }
+}
+
+struct OnboardingBodyStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .font(.system(size: 17))
+            .foregroundColor(.white.opacity(0.85))
+            .multilineTextAlignment(.center)
+            .lineLimit(3)
+            .minimumScaleFactor(0.9)
+            .truncationMode(.tail)
+    }
+}
+
+// MARK: - SHIMMER
+struct Shimmer: ViewModifier {
+    
+    @State private var phase: CGFloat = -1
+    
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                LinearGradient(
+                    colors: [.clear, .white.opacity(0.25), .clear],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .rotationEffect(.degrees(20))
+                .offset(x: phase * 250)
+                .mask(content)
+            )
+            .onAppear {
+                withAnimation(.linear(duration: 2.2).repeatForever(autoreverses: false)) {
+                    phase = 1
+                }
+            }
+    }
 }
