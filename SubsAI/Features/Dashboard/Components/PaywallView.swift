@@ -27,9 +27,9 @@ struct PaywallView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 0) {
                     
-                    // Hero Header - Smaller Image
+                    // Hero Header
                     Color.black
-                        .frame(height: 260)                    // Reduced height
+                        .frame(height: 260)
                         .overlay(
                             VStack(spacing: 12) {
                                 Spacer().frame(height: 30)
@@ -37,7 +37,7 @@ struct PaywallView: View {
                                 Image("subsai1")
                                     .resizable()
                                     .scaledToFit()
-                                    .frame(width: 140, height: 140)   // ← Smaller size
+                                    .frame(width: 140, height: 140)
                                     .cornerRadius(20)
                                 
                                 (
@@ -99,9 +99,9 @@ struct PaywallView: View {
                     VStack(spacing: 14) {
                         PlanCardView(
                             title: "Yearly Plan",
-                            subtitle: "Best value (Only $1.92/week)",
-                            price: "$99.99 / year",
-                            badge: "Save 63% 💰",
+                            subtitle: "Best value (Only $1.15/week)",
+                            price: "$59.99 / year",
+                            badge: "Save 80% 💰",
                             isSelected: selectedPlan == .yearly,
                             onTap: {
                                 selectedPlan = .yearly
@@ -121,12 +121,14 @@ struct PaywallView: View {
                             }
                         )
                         
+                        // Dynamic text above the button
                         HStack(spacing: 6) {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 14))
                                 .foregroundColor(.white)
-                            Text("No payment required now")
-                                .font(.system(size: 18, weight: .medium))
+                            
+                            Text(selectedPlan == .yearly ? "No commitment. Cancel anytime." : "No payment required now")
+                                .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(.white)
                         }
                         .padding(.top, 4)
@@ -142,11 +144,7 @@ struct PaywallView: View {
                         }
                         .padding(.top, 8)
                         
-                        Text("Cancel anytime. No commitment.")
-                            .font(.system(size: 13))
-                            .foregroundColor(Color.white.opacity(0.7))
-                            .padding(.top, 6)
-                        
+                        // Only Restore / Terms / Privacy under the button
                         HStack(spacing: 30) {
                             Button("Restore") {
                                 Task { await viewModel.restorePurchases() }
@@ -160,7 +158,7 @@ struct PaywallView: View {
                                 .foregroundColor(.white)
                         }
                         .font(.system(size: 13))
-                        .padding(.top, 8)
+                        .padding(.top, 12)
                     }
                     .padding(.horizontal, 20)
                     .padding(.bottom, 40)
@@ -202,7 +200,8 @@ struct PaywallView: View {
     }
 }
 
-// MARK: - Supporting Views (Shimmer Badge + Benefit Card)
+// MARK: - Supporting Views
+
 struct PlanCardView: View {
     let title: String
     let subtitle: String
@@ -270,7 +269,6 @@ struct PlanCardView: View {
     }
 }
 
-// MARK: - Slower Natural Shimmer
 struct ShimmerBadge: View {
     @State private var phase: CGFloat = -1.0
     
@@ -287,7 +285,7 @@ struct ShimmerBadge: View {
         .rotationEffect(.degrees(30))
         .offset(x: phase * 140)
         .animation(
-            .linear(duration: 2.6)           // Slower & more elegant
+            .linear(duration: 2.6)
                 .repeatForever(autoreverses: false),
             value: phase
         )
@@ -295,7 +293,8 @@ struct ShimmerBadge: View {
             phase = 1.0
         }
         .mask(
-            RoundedRectangle(cornerRadius: 10))
+            RoundedRectangle(cornerRadius: 10)
+        )
     }
 }
 
