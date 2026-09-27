@@ -48,19 +48,23 @@ struct SubsAIApp: App {
                         withAnimation(.easeInOut(duration: 0.4)) {
                             showingAnalysis = false
                             hasCompletedOnboarding = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                                showPaywallAfterOnboarding = true
-                            }
+                        }
+                        // Check the subscription FIRST, so paying users never see the paywall
+                        Task {
+                            await purchaseVM.checkSubscriptionStatusAsync()
+                            guard !purchaseVM.isPremium else { return }
+                            try? await Task.sleep(nanoseconds: 600_000_000)
+                            showPaywallAfterOnboarding = true
                         }
                     }
                 }
                 else if showPaywallAfterOnboarding && !purchaseVM.isPremium {
                     MainTabView()
                         .fullScreenCover(isPresented: $showPaywallAfterOnboarding) {
-                            PaywallView()
-                                .presentationBackground(.ultraThinMaterial)           // Beautiful blur behind
-                                .presentationCornerRadius(28)                         // Nice rounded modern look
-                                .presentationDragIndicator(.visible)                  // Shows handle at top
+                            PaywallContainer()
+                                .presentationBackground(.ultraThinMaterial)
+                                .presentationCornerRadius(28)
+                                .presentationDragIndicator(.visible)
                                 .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
                         .onDisappear {
@@ -71,7 +75,7 @@ struct SubsAIApp: App {
                     MainTabView()
                 }
             }
-            .preferredColorScheme(.dark)   // ← This is the key line
+            .preferredColorScheme(.dark)
             .animation(.easeInOut(duration: 0.35), value: showingSplash)
             .animation(.easeInOut(duration: 0.35), value: hasSeenWelcome)
             .animation(.easeInOut(duration: 0.35), value: auth.isSignedIn)
@@ -90,6 +94,9 @@ struct SubsAIApp: App {
                 showingAnalysis = false
                 showPaywallAfterOnboarding = false
                 hasCompletedOnboarding = false
+                // Forget the old channel on ANY sign out, not just from Settings
+                YouTubeService.shared.clearCache()
+                AnalysisLoadingView.resetIntro()
             }
         }
     }

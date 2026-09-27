@@ -3,9 +3,10 @@ import SwiftUI
 
 struct SplashView: View {
 
-    @State private var scale: CGFloat = 0.78
-    @State private var opacity: Double = 0.0
-    @State private var glowOpacity: Double = 0.0
+    // Logo starts fully visible, so it shows even if the phone is busy at launch
+    @State private var scale: CGFloat = 0.92
+    @State private var opacity: Double = 1.0
+    @State private var glowOpacity: Double = 0.6
     @State private var shimmerPhase: CGFloat = -1.0
 
     var onComplete: () -> Void
@@ -32,40 +33,37 @@ struct SplashView: View {
                 .overlay(
                     shimmerOverlay()
                         .clipShape(RoundedRectangle(cornerRadius: 26))
+                        .opacity(opacity)
                 )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear {
-            // Gentle entrance
-            withAnimation(.spring(response: 0.65, dampingFraction: 0.78, blendDuration: 0.4)) {
+        .task {
+            // Quick settle-in (0.35s)
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 scale = 1.0
-                opacity = 1.0
                 glowOpacity = 1.0
             }
 
-            // Start shimmer with a nice delay
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                withAnimation(.linear(duration: 2.4).repeatForever(autoreverses: false)) {
-                    shimmerPhase = 1.0
-                }
+            // One quick shimmer pass
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            withAnimation(.easeInOut(duration: 0.5)) {
+                shimmerPhase = 1.0
             }
 
-            // Exit sequence
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.1) {
-                withAnimation(.easeOut(duration: 0.45)) {
-                    opacity = 0.0
-                    scale = 1.08
-                    glowOpacity = 0.0
-                }
-
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                    onComplete()
-                }
+            // Hold briefly, then fade out (whole splash is about 1 second)
+            try? await Task.sleep(nanoseconds: 550_000_000)
+            withAnimation(.easeOut(duration: 0.25)) {
+                opacity = 0.0
+                scale = 1.06
+                glowOpacity = 0.0
             }
+
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            onComplete()
         }
     }
 
-    // MARK: - Improved Shimmer Overlay
+    // MARK: - Shimmer Overlay
     private func shimmerOverlay() -> some View {
         GeometryReader { geo in
             let width = geo.size.width

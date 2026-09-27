@@ -1,12 +1,36 @@
+
+// Features/Dashboard/DashboardView.swift
+// New Home: minimal white page, black + purple gradient header,
+// milestone + streak cards, then stacked cards: latest video, views, subs, watch time, goals.
 import SwiftUI
 import StoreKit
+
+// MARK: - Look
+
+enum HomeLook {
+    static let page        = Color.white
+    static let ink         = Color(red: 0.04, green: 0.04, blue: 0.04)   // #0A0A0A
+    static let secondary   = Color(red: 0.42, green: 0.42, blue: 0.42)   // #6B6B6B
+    static let hairline    = Color(red: 0.91, green: 0.91, blue: 0.91)   // #E8E8E8
+    static let fill        = Color(red: 0.957, green: 0.957, blue: 0.957) // #F4F4F4
+    static let purple      = Color(red: 0.357, green: 0.169, blue: 0.910) // #5B2BE8  (data going up)
+    static let purpleLight = Color(red: 0.549, green: 0.388, blue: 1.0)   // #8C63FF
+    static let orange      = Color(red: 0.910, green: 0.467, blue: 0.180) // #E8772E  (data going down)
+    static let orangeText  = Color(red: 0.706, green: 0.325, blue: 0.035) // #B45309  (orange text on white)
+}
+
+// MARK: - Home
 
 struct DashboardView: View {
     @StateObject private var vm = HomeViewModel()
     var coachVM: CoachViewModel
+
     @State private var showGoalSheet = false
-    @State private var customGoals: [(GoalType, Int)] = []
     @State private var authErrorMessage: String?
+    @State private var scrollY: CGFloat = 0
+
+    // Custom goals are saved, so they survive an app restart
+    @AppStorage("home.customGoals") private var customGoalsRaw: String = ""
 
     // MARK: - Review Request
     @Environment(\.requestReview) private var requestReview
@@ -15,167 +39,109 @@ struct DashboardView: View {
     @AppStorage("reviewRequestsThisYear") private var reviewRequestsThisYear: Int = 0
 
     private let subsMilestones = [
-        1_000, 5_000, 10_000, 25_000, 50_000,
-        100_000, 500_000, 1_000_000
+        100, 500, 1_000, 5_000, 10_000, 25_000, 50_000,
+        100_000, 250_000, 500_000, 1_000_000, 10_000_000
     ]
     private let watchHourTarget = 4_000.0
 
+    // MARK: - Derived values
+
+    private var subsKnown: Bool {
+        guard let channel = vm.channelInfo else { return false }
+        if channel.subscribersHidden == true { return false }
+        return channel.subscribersHidden == false || channel.subscribers > 0
+    }
+
+    private var subs: Int { vm.channelInfo?.subscribers ?? 0 }
+
     private var nextSubsMilestone: Int {
-        let subs = vm.channelInfo?.subscribers ?? 0
-        return subsMilestones.first { $0 > subs } ?? 1_000_000
+        subsMilestones.first { $0 > subs } ?? subsMilestones.last!
     }
 
     private var completedSubsMilestones: [Int] {
-        let subs = vm.channelInfo?.subscribers ?? 0
-        return subsMilestones.filter { $0 <= subs }
+        subsMilestones.filter { $0 <= subs }
     }
 
-    private var weeklyGrowth: Int {
-        vm.subscriberGrowth?.absolute ?? 0
-    }
-
-    // MARK: - Greeting helpers
     private var greetingPrefix: String {
         let hour = Calendar.current.component(.hour, from: Date())
         switch hour {
         case 5..<12:  return "Good morning"
         case 12..<17: return "Good afternoon"
-        default:       return "Good evening"
+        default:      return "Good evening"
         }
     }
 
+    private var periodDays: Int { vm.selectedPeriod.days }
+
     // MARK: - Body
+
     var body: some View {
         NavigationStack {
-            ZStack {
-                LinearGradient(
-                    colors: [
-                        AppTheme.accent.opacity(0.65),
-                        AppTheme.accent.opacity(0.40),
-                        AppTheme.accent.opacity(0.15),
-                        Color.black.opacity(0.98)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+            GeometryReader { geo in
+                let topInset = geo.safeAreaInsets.top
 
-                VStack(spacing: 0) {
-                    RadialGradient(
-                        colors: [AppTheme.accent.opacity(0.25), Color.clear],
-                        center: .top,
-                        startRadius: 0,
-                        endRadius: 380
-                    )
-                    .frame(height: 360)
-                    .ignoresSafeArea(edges: .top)
-                    Spacer()
-                }
+                ZStack(alignment: .top) {
+                    HomeLook.page
 
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 0) {
+                    ScrollView(showsIndicators: false) {
+                        ZStack(alignment: .top) {
+                            GradientHeader()
+                                .frame(height: topInset + 196)
 
-                        // MARK: - Greeting (Avatar + Hey)
-                        if let channel = vm.channelInfo {
-                            greetingHeader(channel)
-                        } else {
-                            greetingHeaderFallback
-                        }
+                            VStack(spacing: 0) {
+                                GeometryReader { g in
+                                    Color.clear.preference(
+                                        key: HomeScrollKey.self,
+                                        value: g.frame(in: .named("homeScroll")).minY
+                                    )
+                                }
+                                .frame(height: 0)
 
-                        // MARK: - Channel Stats section label above carousel
-                        sectionLabel("Channel Stats")
-                            .padding(.horizontal, 18)
-                            .padding(.top, 16)
-                            .padding(.bottom, 4)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                                headerContent
+                                    .padding(.top, topInset + 10)
+                                    .padding(.horizontal, 20)
 
-                        // MARK: - Hero metric carousel
-                        MetricCarouselView(vm: vm)
-                            .padding(.bottom, 2)
+                                topCards
+                                    .padding(.top, 22)
+                                    .padding(.horizontal, 16)
 
-                        VStack(spacing: 0) {
+                                VStack(alignment: .leading, spacing: 14) {
+                                    latestVideoSection
+                                    periodHeader
+                                    metricCard(.views)
+                                    metricCard(.subs)
+                                    metricCard(.watch)
+                                    goalsSection
 
-                            sectionDivider
-
-                            // What's happening right now
-                            if let channel = vm.channelInfo {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    let focus = channelFocus(channel)
-                                    if focus.linksToCoach {
-                                        NavigationLink {
-                                            CoachView(vm: coachVM)
-                                        } label: {
-                                            focusCard(channel)
-                                        }
-                                        .buttonStyle(.plain)
-                                    } else {
-                                        focusCard(channel)
+                                    if let error = vm.errorMessage {
+                                        errorBanner(error)
                                     }
                                 }
-                                .padding(.horizontal, 18)
+                                .padding(.horizontal, 16)
+                                .padding(.top, 20)
+
+                                Spacer(minLength: 120)
                             }
-
-                            sectionDivider
-
-                            // Latest video
-                            VStack(alignment: .leading, spacing: 10) {
-                                HStack {
-                                    sectionLabel("Latest video")
-                                    Spacer()
-                                    Text("All videos")
-                                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                                        .foregroundColor(AppTheme.accent)
-                                }
-                                latestVideoContent()
-                            }
-                            .padding(.horizontal, 18)
-
-                            sectionDivider
-
-                            // Channel growth
-                            if vm.channelInfo != nil {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    sectionLabel("Channel growth")
-                                    periodSelector
-                                    if let channel = vm.channelInfo {
-                                        statsGrid(channel)
-                                    }
-                                }
-                                .padding(.horizontal, 18)
-                            }
-
-                            sectionDivider
-
-                            // Where I'm headed
-                            if let channel = vm.channelInfo {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    sectionLabel("Where I'm headed")
-                                    milestonesSection(channel)
-                                }
-                                .padding(.horizontal, 18)
-                            }
-
-                            if vm.isLoading && vm.channelInfo == nil {
-                                loadingState
-                                    .padding(.horizontal, 18)
-                            }
-
-                            if let error = vm.errorMessage {
-                                errorBanner(error)
-                                    .padding(.horizontal, 18)
-                            }
-
-                            Spacer(minLength: 40)
                         }
                     }
+                    .coordinateSpace(name: "homeScroll")
+                    .refreshable { await vm.loadChannelStats() }
+                    .onPreferenceChange(HomeScrollKey.self) { scrollY = $0 }
+
+                    // Keeps the status bar readable once the header scrolls away
+                    HomeLook.ink
+                        .frame(height: topInset)
+                        .frame(maxWidth: .infinity)
+                        .opacity(scrollY < -120 ? 1 : 0)
+                        .animation(.easeOut(duration: 0.2), value: scrollY < -120)
                 }
-                .refreshable { await vm.loadChannelStats() }
             }
+            .ignoresSafeArea(edges: .top)
             .navigationBarHidden(true)
         }
         .sheet(isPresented: $showGoalSheet) {
             GoalPickerSheet(isPresented: $showGoalSheet) { type, target in
-                customGoals.append((type, target))
+                addGoal(type, target)
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
@@ -224,617 +190,890 @@ struct DashboardView: View {
         reviewRequestsThisYear += 1
     }
 
-    // MARK: - Greeting header (Avatar + Hey only)
-    private func greetingHeader(_ channel: Channel) -> some View {
-        HStack(alignment: .bottom, spacing: 16) {
+    // MARK: - Header
 
-            // Profile Picture
-            Group {
-                if !channel.profilePicURL.isEmpty {
-                    AsyncImage(url: URL(string: channel.profilePicURL)) { image in
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    } placeholder: {
-                        Circle()
-                            .fill(AppTheme.accent.opacity(0.2))
-                    }
-                    .frame(width: 88, height: 88)
-                    .clipShape(Circle())
-                } else {
-                    Image(systemName: "person.circle.fill")
-                        .font(.system(size: 88))
-                        .foregroundColor(AppTheme.accent.opacity(0.6))
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(greetingPrefix)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.9))
-                    .kerning(0.8)
-                    .textCase(.uppercase)
-
-                Text("Hey, \(channel.name.components(separatedBy: " ").first ?? channel.name) 👋")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundColor(AppTheme.textPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-            }
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 18)
-        .padding(.top, 12)
-        .padding(.bottom, 4)
-    }
-
-    private var greetingHeaderFallback: some View {
-        HStack(alignment: .bottom, spacing: 16) {
-            Image(systemName: "person.circle.fill")
-                .font(.system(size: 88))
-                .foregroundColor(AppTheme.accent.opacity(0.6))
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(greetingPrefix)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.9))
-                    .kerning(0.8)
-                    .textCase(.uppercase)
-
-                Text("Hey 👋")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundColor(AppTheme.textPrimary)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 18)
-        .padding(.top, 12)
-        .padding(.bottom, 4)
-    }
-
-    // MARK: - Section divider
-    private var sectionDivider: some View {
-        Divider()
-            .opacity(0.12)
-            .padding(.vertical, 8)
-            .padding(.horizontal, 18)
-    }
-
-    // MARK: - Focus card
-    private func focusCard(_ channel: Channel) -> some View {
-        let focus = channelFocus(channel)
-
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(Color.white.opacity(0.6))
-                    .frame(width: 5, height: 5)
-
-                Text("Your focus right now")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundColor(.white.opacity(0.75))
-                    .kerning(1.0)
-                    .textCase(.uppercase)
-
-                Spacer()
-
-                if focus.linksToCoach {
-                    HStack(spacing: 3) {
-                        Text("See Coach")
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white.opacity(0.85))
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 11))
-                            .foregroundColor(.white.opacity(0.85))
-                    }
-                }
-            }
-
-            Text(focus.title)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+    private var headerContent: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("SubsAI")
+                .font(.system(size: 15, weight: .bold))
                 .foregroundColor(.white)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
 
-            Text(focus.body)
-                .font(.system(size: 14, weight: .regular, design: .rounded))
-                .foregroundColor(.white.opacity(0.75))
-                .lineSpacing(4)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 14) {
+                avatar(size: 64)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(greetingPrefix),")
+                        .font(.system(size: 14))
+                        .foregroundColor(.white.opacity(0.72))
+
+                    Text(vm.channelInfo?.name ?? "Your channel")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+
+                Spacer(minLength: 0)
+            }
         }
-        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppTheme.accent)
-        .cornerRadius(20)
     }
 
-    // MARK: - Focus logic
-    private struct ChannelFocus {
-        let title: String
-        let body: String
-        let color: Color
-        var linksToCoach: Bool = false
+    private func avatar(size: CGFloat) -> some View {
+        Group {
+            if let urlString = vm.channelInfo?.profilePicURL,
+               !urlString.isEmpty,
+               let url = URL(string: urlString) {
+                AsyncImage(url: url) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    HomeLook.purple.opacity(0.5)
+                }
+            } else {
+                ZStack {
+                    LinearGradient(
+                        colors: [HomeLook.purple, HomeLook.purpleLight],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    )
+                    Image(systemName: "person.fill")
+                        .font(.system(size: size * 0.4))
+                        .foregroundColor(.white)
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(Color.white, lineWidth: 3))
     }
 
-    private func channelFocus(_ channel: Channel) -> ChannelFocus {
-        let netSubs    = vm.subscriberGrowth?.absolute ?? 0
-        let views      = vm.viewGrowth?.absolute ?? 0
-        let watchHours = channel.watchTime
+    // MARK: - Top cards (milestone + streak)
 
-        if views == 0 && watchHours == 0 {
-            return ChannelFocus(
-                title: "Start by uploading consistently.",
-                body: "Your channel doesn't have enough recent data to diagnose yet. The fastest way to grow is to keep uploading — the patterns will show up within a few videos.",
-                color: AppTheme.accent
-            )
+    private var topCards: some View {
+        HStack(alignment: .top, spacing: 12) {
+            milestoneCard
+            streakCard
         }
+        .fixedSize(horizontal: false, vertical: true)
+    }
 
-        if netSubs < -2 {
-            return ChannelFocus(
-                title: "You're losing more subscribers than you're gaining.",
-                body: "This usually means your recent videos aren't matching what your audience subscribed for. Look at your last 3 videos on the Coach page — check what changed.",
-                color: .red,
-                linksToCoach: true
-            )
+    private var milestoneCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            smallLabel("NEXT MILESTONE")
+
+            if vm.channelInfo == nil {
+                placeholderBlock
+            } else if !subsKnown {
+                Text("Subs hidden")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(HomeLook.ink)
+                Text("Show your sub count on YouTube to track this.")
+                    .font(.system(size: 12))
+                    .foregroundColor(HomeLook.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                (Text(subs.formatted())
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundColor(HomeLook.ink)
+                 + Text(" / \(compact(nextSubsMilestone))")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(HomeLook.secondary))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                ThinBar(fraction: Double(subs) / Double(nextSubsMilestone), height: 6)
+
+                Text("\(max(nextSubsMilestone - subs, 0).formatted()) subs to go")
+                    .font(.system(size: 12))
+                    .foregroundColor(HomeLook.secondary)
+            }
         }
+        .modifier(FloatingCard())
+    }
 
-        if watchHours > 0 && views < 500 {
-            return ChannelFocus(
-                title: "Your content is being watched — but not enough people are clicking.",
-                body: "You have solid watch time, which means viewers who do watch are staying. The problem is getting them to click in the first place. Your thumbnails or titles need work.",
-                color: .orange
-            )
+    private var streakCard: some View {
+        let weeks = Array(vm.uploadWeeks.suffix(8))
+        let dots = weeks.isEmpty ? Array(repeating: false, count: 8) : weeks
+        let streak = vm.uploadStreak
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                smallLabel("UPLOAD STREAK")
+                Spacer(minLength: 4)
+                Image(systemName: "flame")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(HomeLook.purple)
+            }
+
+            (Text(streak >= 12 ? "12+" : "\(streak)")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundColor(HomeLook.ink)
+             + Text(streak == 1 ? " week" : " weeks")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(HomeLook.secondary))
+
+            HStack(spacing: 0) {
+                ForEach(Array(dots.enumerated()), id: \.offset) { index, posted in
+                    weekDot(posted: posted, isThisWeek: index == dots.count - 1)
+                    if index < dots.count - 1 { Spacer(minLength: 2) }
+                }
+            }
+
+            Text(vm.postedThisWeek
+                 ? "Posted this week"
+                 : (streak > 0 ? "Post to keep it going" : "Post this week to start"))
+                .font(.system(size: 12))
+                .foregroundColor(HomeLook.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
+        .modifier(FloatingCard())
+    }
 
-        if netSubs == 0 && views < 1000 {
-            return ChannelFocus(
-                title: "Growth has stalled this period.",
-                body: "Views and subscriber gains are both low. Check the Coach page — it'll tell you which of your videos has the best chance of turning this around.",
-                color: .yellow,
-                linksToCoach: true
-            )
+    private func weekDot(posted: Bool, isThisWeek: Bool) -> some View {
+        ZStack {
+            if posted {
+                Circle().fill(HomeLook.purple)
+            } else if isThisWeek {
+                // This week is still open
+                Circle().stroke(HomeLook.purple, lineWidth: 1.5)
+            } else {
+                Circle().fill(HomeLook.fill)
+            }
         }
-
-        if netSubs > 0 && views > 0 {
-            return ChannelFocus(
-                title: "Your channel is growing. Keep the momentum.",
-                body: "You gained subscribers and views \(vm.selectedPeriod.label). The best thing you can do right now is upload again — consistency compounds.",
-                color: .green
-            )
-        }
-
-        return ChannelFocus(
-            title: "Check your latest video performance.",
-            body: "Tap the video below to see how it's doing and what to improve for your next upload.",
-            color: AppTheme.accent
+        .frame(width: 12, height: 12)
+        .overlay(
+            Circle()
+                .stroke(HomeLook.purple, lineWidth: 1.5)
+                .padding(-3.5)
+                .opacity(posted && isThisWeek ? 1 : 0)
         )
     }
 
-    // MARK: - Period selector
-    private var periodSelector: some View {
-        HStack(spacing: 6) {
-            ForEach(TimePeriod.allCases, id: \.self) { period in
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        vm.changePeriod(to: period)
-                    }
-                } label: {
-                    Text(period.rawValue)
-                        .font(.system(
-                            size: 14,
-                            weight: vm.selectedPeriod == period ? .semibold : .regular
-                        ))
-                        .foregroundColor(
-                            vm.selectedPeriod == period
-                                ? .white
-                                : AppTheme.textSecondary
-                        )
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(
-                            vm.selectedPeriod == period
-                                ? AppTheme.accent
-                                : Color(.systemFill)
-                        )
-                        .cornerRadius(20)
+    // MARK: - Growth cards (Views, Subs, Watch time)
+
+    /// Small row above the metric cards. One picker sets the days for all three.
+    private var periodHeader: some View {
+        HStack {
+            Text("Your growth")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(HomeLook.ink)
+
+            Spacer()
+
+            Menu {
+                ForEach(TimePeriod.allCases, id: \.self) { period in
+                    Button("Last \(period.days) days") { vm.changePeriod(to: period) }
                 }
-                .disabled(vm.isLoading)
+            } label: {
+                HStack(spacing: 4) {
+                    Text("\(periodDays) days")
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(HomeLook.ink)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(Capsule().fill(HomeLook.fill))
             }
+            .disabled(vm.isLoading)
         }
+        .padding(.top, 6)
     }
 
-    // MARK: - Stats grid
-    private func statsGrid(_ channel: Channel) -> some View {
-        LazyVGrid(
-            columns: [GridItem(.flexible()), GridItem(.flexible())],
-            spacing: 10
-        ) {
-            StatCard(
-                title: "Views",
-                value: channel.totalViews.formatted(),
-                delta: vm.viewGrowth.map {
-                    "+\($0.absolute.formatted()) \(vm.selectedPeriod.label)"
-                },
-                iconName: "eye.fill",
-                color: AppTheme.accent,
-                percentage: vm.viewGrowth?.formattedPercentage
-            )
+    private func metricCard(_ metric: HomeMetric) -> some View {
+        let rising = chartRising(metric)
 
-            StatCard(
-                title: "Watch time",
-                value: channel.watchTime > 0
-                    ? String(format: "%.0fh", channel.watchTime)
-                    : "—",
-                delta: vm.watchTimeGrowth.map { growth in
-                    growth.absolute > 0
-                        ? "+\(growth.absolute)h \(vm.selectedPeriod.label)"
-                        : "No data this period"
-                },
-                iconName: "clock.fill",
-                color: .cyan,
-                percentage: vm.watchTimeGrowth.flatMap { growth in
-                    growth.absolute > 0 ? growth.formattedPercentage : nil
+        let label: String
+        let value: String
+        let caption: String
+        var badge: Int? = nil
+
+        switch metric {
+        case .views:
+            label = "VIEWS"
+            value = (vm.viewGrowth?.absolute ?? 0).formatted()
+            caption = "Last \(periodDays) days"
+        case .subs:
+            label = "SUBSCRIBERS"
+            value = subsKnown ? subs.formatted() : "Hidden"
+            caption = subsKnown ? "Total subscribers" : "Show your sub count on YouTube to see this"
+            if subsKnown { badge = vm.subscriberGrowth?.absolute }
+        case .watch:
+            label = "WATCH TIME"
+            value = hoursText(vm.channelInfo?.watchTime ?? 0)
+            caption = "Last \(periodDays) days"
+        }
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                smallLabel(label)
+                Spacer()
+                if let badge {
+                    changeBadge(badge)
                 }
-            )
+            }
 
-            StatCard(
-                title: "Videos",
-                value: channel.videoCount.formatted(),
-                delta: nil,
-                iconName: "play.rectangle.fill",
-                color: .orange
-            )
+            if vm.channelInfo == nil {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(HomeLook.fill)
+                    .frame(width: 120, height: 38)
+                    .padding(.vertical, 2)
+            } else {
+                Text(value)
+                    .font(.system(size: 38, weight: .bold))
+                    .kerning(-1)
+                    .foregroundColor(HomeLook.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
 
-            StatCard(
-                title: "Subscribers",
-                value: channel.subscribers.formatted(),
-                delta: vm.subscriberGrowth.map { growth in
-                    let prefix = growth.absolute >= 0 ? "+" : ""
-                    return "\(prefix)\(growth.absolute.formatted()) \(vm.selectedPeriod.label)"
-                },
-                iconName: "person.2.fill",
-                color: AppTheme.success,
-                percentage: vm.subscriberGrowth?.formattedPercentage
-            )
+            Text(caption)
+                .font(.system(size: 13))
+                .foregroundColor(HomeLook.secondary)
+
+            chart(for: metric, rising: rising)
+                .padding(.top, 8)
+        }
+        .modifier(StackCard())
+    }
+
+    private func changeBadge(_ change: Int) -> some View {
+        let up = change > 0, down = change < 0
+        let color = up ? HomeLook.purple : (down ? HomeLook.orangeText : HomeLook.secondary)
+        let icon = up ? "arrow.up" : (down ? "arrow.down" : "minus")
+        let text = change == 0 ? "No change" : abs(change).formatted()
+
+        return HStack(spacing: 3) {
+            Image(systemName: icon).font(.system(size: 11, weight: .bold))
+            Text(text).font(.system(size: 13, weight: .semibold))
+        }
+        .foregroundColor(color)
+    }
+
+    @ViewBuilder
+    private func chart(for metric: HomeMetric, rising: Bool) -> some View {
+        let values = chartValues(metric)
+        if values.count >= 2, values.contains(where: { $0 != 0 }) {
+            TrendChart(values: values, color: rising ? HomeLook.purple : HomeLook.orange)
+                .frame(height: 84)
+        } else if vm.trend == nil && vm.isLoading {
+            HStack { Spacer(); ProgressView().tint(HomeLook.secondary); Spacer() }
+                .frame(height: 84)
+        } else if vm.channelInfo != nil {
+            Text("Not enough data yet.")
+                .font(.system(size: 13))
+                .foregroundColor(HomeLook.secondary)
         }
     }
 
-    // MARK: - Latest video content
-    private func latestVideoContent() -> some View {
-        Group {
+    /// Real numbers from YouTube, one per day.
+    private func chartValues(_ metric: HomeMetric) -> [Double] {
+        guard let trend = vm.trend else { return [] }
+        switch metric {
+        case .subs:
+            // Running total that ends at today's sub count
+            guard subsKnown else { return [] }
+            let total = trend.netSubs.reduce(0, +)
+            var running = Double(subs) - total
+            return trend.netSubs.map { running += $0; return running }
+        case .views:
+            return trend.views
+        case .watch:
+            return trend.watchHours
+        }
+    }
+
+    /// Purple if the trend is flat or going up, orange if it's going down.
+    private func chartRising(_ metric: HomeMetric) -> Bool {
+        guard let trend = vm.trend else { return true }
+        if metric == .subs { return trend.netSubs.reduce(0, +) >= 0 }
+        let values = chartValues(metric)
+        guard values.count >= 3 else { return true }
+        let k = max(values.count / 3, 1)
+        let first = values.prefix(k).reduce(0, +) / Double(k)
+        let last = values.suffix(k).reduce(0, +) / Double(k)
+        return last >= first
+    }
+
+    // MARK: - Latest video
+
+    private var latestVideoSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("LATEST VIDEO")
+                .font(.system(size: 11, weight: .semibold))
+                .kerning(1.1)
+                .foregroundColor(.white.opacity(0.55))
+
             if let video = vm.latestVideo {
                 NavigationLink {
                     VideoDeepAnalysisView(video: video, allVideos: [video])
                 } label: {
-                    LatestVideoPulseCard(video: video)
+                    latestVideoRow(video)
                 }
                 .buttonStyle(.plain)
-
             } else if vm.isLoadingLatestVideo {
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(AppTheme.cardBackground)
-                    .frame(height: 200)
-                    .overlay(
-                        VStack(spacing: 10) {
-                            ProgressView()
-                            Text("Loading latest video…")
-                                .font(.system(size: 13, weight: .medium, design: .rounded))
-                                .foregroundColor(AppTheme.textTertiary)
-                        }
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20)
-                            .stroke(AppTheme.borderSubtle, lineWidth: 0.5)
-                    )
-
+                HStack { Spacer(); ProgressView().tint(.white); Spacer() }
+                    .frame(height: 90)
             } else {
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(AppTheme.cardBackground)
-                    .frame(height: 80)
-                    .overlay(
-                        Text("No videos found on this channel")
-                            .font(.system(size: 14, weight: .medium, design: .rounded))
-                            .foregroundColor(AppTheme.textTertiary)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20)
-                            .stroke(AppTheme.borderSubtle, lineWidth: 0.5)
-                    )
+                Text("No videos yet. Your latest upload will show here.")
+                    .font(.system(size: 14))
+                    .foregroundColor(.white.opacity(0.65))
             }
+        }
+        .modifier(BlackCard())
+    }
+
+    private func latestVideoRow(_ video: Video) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 14) {
+                VideoThumbnailView(video: video)
+                    .frame(width: 112, height: 63)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(video.title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    Text(daysAgo(video.publishedAt))
+                        .font(.system(size: 13))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.4))
+            }
+
+            HStack(alignment: .top, spacing: 0) {
+                viewsStat(video)
+                middleStat(video)
+                rankStat
+            }
+            .padding(.top, 14)
+            .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1) }
+
+            if let footnote = latestFootnote {
+                Text(footnote)
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.45))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    // Views
+    private func viewsStat(_ video: Video) -> some View {
+        videoStat(
+            value: video.views > 0 ? compact(video.views) : "0",
+            label: "Views",
+            note: nil,
+            noteColor: .clear
+        )
+    }
+
+    // Thumbnail CTR when YouTube has it, otherwise average watch time
+    @ViewBuilder
+    private func middleStat(_ video: Video) -> some View {
+        if let ctr = vm.latestCTR {
+            let good = ctr >= 0.06, low = ctr < 0.03
+            videoStat(
+                value: String(format: "%.1f%%", ctr * 100),
+                label: "Thumbnail CTR",
+                note: good ? "Great" : (low ? "Low" : "Normal"),
+                noteColor: good ? HomeLook.purpleLight : (low ? HomeLook.orange : .white.opacity(0.6))
+            )
+        } else {
+            let retention = video.analytics?.retention ?? 0
+            videoStat(
+                value: video.averageViewDuration > 0 ? duration(video.averageViewDuration) : "-",
+                label: "Avg. watch",
+                note: retention > 0 ? "\(Int((retention * 100).rounded()))% watched" : nil,
+                noteColor: retention >= 0.5 ? HomeLook.purpleLight : (retention >= 0.35 ? .white.opacity(0.6) : HomeLook.orange)
+            )
         }
     }
 
-    // MARK: - Milestones section
-    private func milestonesSection(_ channel: Channel) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            MilestoneCard(
-                current: channel.subscribers,
-                target: nextSubsMilestone,
-                label: "\(nextSubsMilestone.formatted()) subscribers",
-                weeklyGrowth: weeklyGrowth
+    // Ranking vs your recent videos
+    @ViewBuilder
+    private var rankStat: some View {
+        if let rank = vm.latestRank {
+            let topThird = rank.rank <= max(1, rank.total / 3)
+            let bottomThird = rank.rank > rank.total - max(1, rank.total / 3)
+            let note: String = rank.rank == 1 ? "Your best"
+                : (topThird ? "Top video" : (bottomThird ? "Below usual" : "About usual"))
+            let color: Color = topThird ? HomeLook.purpleLight
+                : (bottomThird ? HomeLook.orange : .white.opacity(0.6))
+
+            VStack(alignment: .leading, spacing: 3) {
+                (Text("#\(rank.rank)")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+                 + Text(" of \(rank.total)")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white.opacity(0.55)))
+                Text("Ranking")
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.55))
+                Text(note)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(color)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            videoStat(
+                value: "-",
+                label: "Ranking",
+                note: vm.rankPending ? "Ready tomorrow" : nil,
+                noteColor: .white.opacity(0.6)
+            )
+        }
+    }
+
+    /// One small line that says how the numbers work, so people trust them.
+    private var latestFootnote: String? {
+        var parts: [String] = []
+        if let rank = vm.latestRank {
+            let dayWord = rank.days == 1 ? "day" : "days"
+            parts.append("Ranked by views in the first \(rank.days) \(dayWord), vs. your last \(rank.total) videos.")
+        }
+        if vm.latestCTR == nil && !AuthManager.shared.isDemoMode {
+            parts.append("Thumbnail CTR shows up 1 to 2 days after you connect.")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
+    private func videoStat(value: String, label: String, note: String?, noteColor: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(value)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(.white)
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.55))
+            Text(note ?? " ")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(noteColor)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Goals
+
+    private var goalsSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            smallLabel("YOUR GOALS")
+                .padding(.bottom, 6)
+
+            goalRow(
+                label: "Watch hours (12 months)",
+                current: vm.yearWatchHours ?? 0,
+                target: watchHourTarget,
+                unit: "h"
             )
 
-            HStack(spacing: 10) {
-                MiniMilestoneCard(
-                    label: "Watch hours",
-                    current: channel.watchTime,
-                    target: watchHourTarget,
-                    unit: "h",
-                    color: AppTheme.accent
+            ForEach(Array(customGoals.enumerated()), id: \.offset) { index, goal in
+                goalRow(
+                    label: goal.type.rawValue,
+                    current: currentValue(for: goal.type),
+                    target: Double(goal.target),
+                    unit: goal.type.unit
                 )
-                MiniMilestoneCard(
-                    label: "50K subs",
-                    current: Double(channel.subscribers),
-                    target: 50_000,
-                    unit: "",
-                    color: AppTheme.accent
-                )
-            }
-
-            ForEach(Array(customGoals.enumerated()), id: \.offset) { _, goal in
-                let (type, target) = goal
-                MiniMilestoneCard(
-                    label: type.rawValue,
-                    current: currentValue(for: type, channel: channel),
-                    target: Double(target),
-                    unit: type.unit,
-                    color: type.color
-                )
-            }
-
-            if !completedSubsMilestones.isEmpty {
-                VStack(spacing: 8) {
-                    ForEach(completedSubsMilestones.suffix(2), id: \.self) { milestone in
-                        CompletedMilestoneRow(
-                            title: "\(milestone.formatted()) subscribers reached",
-                            subtitle: "Completed"
-                        )
+                .contextMenu {
+                    Button(role: .destructive) {
+                        removeGoal(at: index)
+                    } label: {
+                        Label("Remove goal", systemImage: "trash")
                     }
                 }
+            }
+
+            ForEach(completedSubsMilestones.suffix(2), id: \.self) { milestone in
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(HomeLook.purple)
+                    Text("\(milestone.formatted()) subs reached")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(HomeLook.ink)
+                    Spacer()
+                }
+                .padding(.vertical, 12)
+                .overlay(alignment: .bottom) { Rectangle().fill(HomeLook.hairline).frame(height: 1) }
             }
 
             Button {
                 showGoalSheet = true
             } label: {
                 HStack(spacing: 8) {
-                    ZStack {
-                        Circle()
-                            .stroke(AppTheme.textTertiary, lineWidth: 1)
-                            .frame(width: 20, height: 20)
-                        Text("+")
-                            .font(.system(size: 15, weight: .medium, design: .rounded))
-                            .foregroundColor(AppTheme.textTertiary)
-                    }
-                    Text("Add a custom goal")
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundColor(AppTheme.textTertiary)
+                    Image(systemName: "plus")
+                        .font(.system(size: 13, weight: .bold))
+                    Text("Add a goal")
+                        .font(.system(size: 15, weight: .semibold))
                 }
+                .foregroundColor(HomeLook.ink)
                 .frame(maxWidth: .infinity)
-                .padding(14)
+                .frame(height: 48)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 18)
-                        .stroke(
-                            AppTheme.borderSubtle,
-                            style: StrokeStyle(lineWidth: 0.5, dash: [5, 4])
-                        )
+                    RoundedRectangle(cornerRadius: 24)
+                        .stroke(HomeLook.hairline, style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
                 )
             }
+            .buttonStyle(.plain)
+            .padding(.top, 12)
         }
+        .modifier(StackCard())
     }
 
-    private func currentValue(for type: GoalType, channel: Channel) -> Double {
+    private func goalRow(label: String, current: Double, target: Double, unit: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(label)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(HomeLook.ink)
+                Spacer()
+                Text("\(shortNumber(current))\(unit) / \(shortNumber(target))\(unit)")
+                    .font(.system(size: 13))
+                    .foregroundColor(HomeLook.secondary)
+            }
+            ThinBar(fraction: target > 0 ? current / target : 0, height: 4)
+        }
+        .padding(.vertical, 12)
+        .overlay(alignment: .bottom) { Rectangle().fill(HomeLook.hairline).frame(height: 1) }
+    }
+
+    private var customGoals: [(type: GoalType, target: Int)] {
+        customGoalsRaw
+            .split(separator: ";")
+            .compactMap { part in
+                let bits = part.split(separator: "|")
+                guard bits.count == 2,
+                      let type = GoalType(rawValue: String(bits[0])),
+                      let target = Int(bits[1]) else { return nil }
+                return (type, target)
+            }
+    }
+
+    private func addGoal(_ type: GoalType, _ target: Int) {
+        let entry = "\(type.rawValue)|\(target)"
+        customGoalsRaw = customGoalsRaw.isEmpty ? entry : customGoalsRaw + ";" + entry
+    }
+
+    private func removeGoal(at index: Int) {
+        var parts = customGoalsRaw.split(separator: ";").map(String.init)
+        guard parts.indices.contains(index) else { return }
+        parts.remove(at: index)
+        customGoalsRaw = parts.joined(separator: ";")
+    }
+
+    private func currentValue(for type: GoalType) -> Double {
+        guard let channel = vm.channelInfo else { return 0 }
         switch type {
         case .subscribers: return Double(channel.subscribers)
-        case .watchHours:  return channel.watchTime
+        case .watchHours:  return vm.yearWatchHours ?? channel.watchTime
         case .views:       return Double(channel.totalViews)
         case .videos:      return Double(channel.videoCount)
         }
     }
 
-    // MARK: - Loading / error
-    private var loadingState: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-            Text("Loading your channel…")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundColor(AppTheme.textSecondary)
+    // MARK: - Small pieces
+
+    private var hairline: some View {
+        Rectangle().fill(HomeLook.hairline).frame(height: 1)
+    }
+
+    private func smallLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .semibold))
+            .kerning(1.1)
+            .foregroundColor(HomeLook.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+    }
+
+    private var placeholderBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            RoundedRectangle(cornerRadius: 4).fill(HomeLook.fill).frame(width: 90, height: 22)
+            RoundedRectangle(cornerRadius: 3).fill(HomeLook.fill).frame(height: 6)
+            RoundedRectangle(cornerRadius: 3).fill(HomeLook.fill).frame(width: 70, height: 10)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 60)
     }
 
     private func errorBanner(_ error: String) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
-                .font(.caption)
+            Image(systemName: "exclamationmark.circle")
+                .foregroundColor(HomeLook.orangeText)
             Text(error)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundColor(AppTheme.textSecondary)
+                .font(.system(size: 13))
+                .foregroundColor(HomeLook.orangeText)
             Spacer()
         }
         .padding(14)
-        .background(Color.orange.opacity(0.08))
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.orange.opacity(0.2), lineWidth: 0.5)
-        )
+        .background(RoundedRectangle(cornerRadius: 14).fill(HomeLook.orange.opacity(0.10)))
     }
 
-    // MARK: - Section label
-    private func sectionLabel(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 18, weight: .bold, design: .rounded))
-            .foregroundColor(AppTheme.textPrimary)
+    // MARK: - Formatting
+
+    /// 1_000 -> "1K", 25_000 -> "25K", 1_000_000 -> "1M"
+    private func compact(_ n: Int) -> String {
+        switch n {
+        case 1_000_000...:
+            let v = Double(n) / 1_000_000
+            return v == v.rounded() ? "\(Int(v))M" : String(format: "%.1fM", v)
+        case 1_000...:
+            let v = Double(n) / 1_000
+            return v == v.rounded() ? "\(Int(v))K" : String(format: "%.1fK", v)
+        default:
+            return "\(n)"
+        }
+    }
+
+    private func shortNumber(_ value: Double) -> String {
+        // 1,840 / 4,000 reads better than 1.8K / 4K. Only shorten big numbers.
+        if value >= 10_000 { return compact(Int(value.rounded())) }
+        if value > 0 && value < 10 { return String(format: "%.1f", value) }
+        return Int(value.rounded()).formatted()
+    }
+
+    private func hoursText(_ hours: Double) -> String {
+        hours >= 10 ? "\(Int(hours.rounded()))h" : String(format: "%.1fh", hours)
+    }
+
+    private func duration(_ seconds: Int) -> String {
+        String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    private func daysAgo(_ date: Date) -> String {
+        let days = Calendar.current.dateComponents([.day], from: date, to: Date()).day ?? 0
+        if days <= 0 { return "Today" }
+        if days == 1 { return "Yesterday" }
+        return "\(days) days ago"
     }
 }
 
-// MARK: - MetricCarouselView - Much taller hero cards with bigger graph
-struct MetricCarouselView: View {
-    @ObservedObject var vm: HomeViewModel
+// MARK: - Metric tabs
 
-    private struct MetricItem: Identifiable {
-        let id = UUID()
-        let label: String
-        let value: String
-        let delta: String
-        let isPositive: Bool?
-        let color: Color
-        let dataPoints: [Double]
+enum HomeMetric: String, CaseIterable, Identifiable {
+    case subs, views, watch
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .subs:  return "Subs"
+        case .views: return "Views"
+        case .watch: return "Watch time"
+        }
     }
+}
 
-    private var metrics: [MetricItem] {
-        guard let channel = vm.channelInfo else { return [] }
+// MARK: - Header background (black + purple sweep)
 
-        let viewDelta   = vm.viewGrowth?.absolute ?? 0
-        let subsDelta   = vm.subscriberGrowth?.absolute ?? 0
-        let watchDelta  = vm.watchTimeGrowth?.absolute ?? 0
+/// Shared with Settings.
+struct GradientHeader: View {
+    var body: some View {
+        ZStack {
+            HomeLook.ink
 
-        return [
-            MetricItem(
-                label: "Total views",
-                value: channel.totalViews.formatted(),
-                delta: viewDelta > 0 ? "+\(viewDelta.formatted()) this month" :
-                       viewDelta < 0 ? "\(viewDelta.formatted()) this month" : "No change this month",
-                isPositive: viewDelta > 0 ? true : (viewDelta < 0 ? false : nil),
-                color: AppTheme.accent,
-                dataPoints: [44, 40, 42, 34, 32, 37, 24, 18, 26, 21, 29, 13, 8, 15, 18, 12]
-            ),
-            MetricItem(
-                label: "Subscribers",
-                value: channel.subscribers.formatted(),
-                delta: subsDelta > 0 ? "+\(subsDelta.formatted()) this month" :
-                       subsDelta < 0 ? "\(subsDelta.formatted()) this month" : "No change this month",
-                isPositive: subsDelta > 0 ? true : (subsDelta < 0 ? false : nil),
-                color: AppTheme.success,
-                dataPoints: [28, 28, 27, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28]
-            ),
-            MetricItem(
-                label: "Watch time",
-                value: channel.watchTime > 0 ? String(format: "%.0fh", channel.watchTime) : "—",
-                delta: watchDelta > 0 ? "+\(watchDelta)h this month" :
-                       watchDelta < 0 ? "\(watchDelta)h this month" : "No change this month",
-                isPositive: watchDelta > 0 ? true : (watchDelta < 0 ? false : nil),
-                color: .cyan,
-                dataPoints: [46, 44, 40, 34, 26, 18, 12, 8, 6, 6, 7, 8, 9, 8, 7, 6]
+            RadialGradient(
+                colors: [HomeLook.purple.opacity(0.55), .clear],
+                center: .topTrailing,
+                startRadius: 0,
+                endRadius: 380
             )
-        ]
-    }
 
-    @State private var currentIndex: Int = 0
+            SweepShape(startX: 0.38, endY: 0.78)
+                .fill(LinearGradient(
+                    colors: [HomeLook.purpleLight, HomeLook.purple.opacity(0.85), HomeLook.purple.opacity(0)],
+                    startPoint: .topTrailing,
+                    endPoint: .bottomLeading
+                ))
+
+            SweepShape(startX: 0.60, endY: 0.46)
+                .fill(LinearGradient(
+                    colors: [Color(red: 0.72, green: 0.61, blue: 1.0).opacity(0.55), .clear],
+                    startPoint: .topTrailing,
+                    endPoint: .bottomLeading
+                ))
+        }
+        .clipShape(
+            UnevenRoundedRectangle(
+                topLeadingRadius: 0,
+                bottomLeadingRadius: 32,
+                bottomTrailingRadius: 32,
+                topTrailingRadius: 0,
+                style: .continuous
+            )
+        )
+    }
+}
+
+/// A curved band from the top edge down to the right edge.
+struct SweepShape: Shape {
+    let startX: CGFloat   // where it starts on the top edge (0...1)
+    let endY: CGFloat     // where it ends on the right edge (0...1)
+
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width, h = rect.height
+        var p = Path()
+        p.move(to: CGPoint(x: w * startX, y: 0))
+        p.addCurve(
+            to: CGPoint(x: w, y: h * endY),
+            control1: CGPoint(x: w * (startX + 0.22), y: h * 0.2),
+            control2: CGPoint(x: w * 0.77, y: h * endY * 0.58)
+        )
+        p.addLine(to: CGPoint(x: w, y: 0))
+        p.closeSubpath()
+        return p
+    }
+}
+
+// MARK: - Floating card (white, soft shadow)
+
+private struct FloatingCard: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color.white)
+            )
+            .shadow(color: Color.black.opacity(0.12), radius: 15, x: 0, y: 8)
+    }
+}
+
+// MARK: - Black card (latest video)
+
+private struct BlackCard: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                ZStack {
+                    HomeLook.ink
+                    // A soft purple glow in the corner, like the header
+                    RadialGradient(
+                        colors: [HomeLook.purple.opacity(0.35), .clear],
+                        center: .topTrailing,
+                        startRadius: 0,
+                        endRadius: 260
+                    )
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            )
+            .shadow(color: Color.black.opacity(0.18), radius: 14, x: 0, y: 8)
+    }
+}
+
+// MARK: - Stack card (white, thin grey border)
+
+private struct StackCard: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(Color.white)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(HomeLook.hairline, lineWidth: 1)
+            )
+    }
+}
+
+// MARK: - Thin progress bar (fills when it appears)
+
+private struct ThinBar: View {
+    let fraction: Double
+    var color: Color = HomeLook.purple
+    var height: CGFloat = 6
+
+    @State private var shown = false
 
     var body: some View {
-        if vm.channelInfo == nil { return AnyView(EmptyView()) }
-        return AnyView(
-            VStack(spacing: 6) {
-                TabView(selection: $currentIndex) {
-                    ForEach(Array(metrics.enumerated()), id: \.offset) { index, metric in
-                        metricCard(metric)
-                            .tag(index)
-                            .padding(.horizontal, 18)
-                    }
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(minHeight: 380, maxHeight: 440)
-
-                HStack(spacing: 6) {
-                    ForEach(0..<metrics.count, id: \.self) { i in
-                        Capsule()
-                            .fill(i == currentIndex ? AppTheme.accent : Color(.systemFill))
-                            .frame(width: i == currentIndex ? 18 : 5, height: 5)
-                            .animation(.easeInOut(duration: 0.25), value: currentIndex)
-                    }
-                }
+        GeometryReader { g in
+            ZStack(alignment: .leading) {
+                Capsule().fill(HomeLook.fill)
+                Capsule()
+                    .fill(color)
+                    .frame(width: g.size.width * (shown ? CGFloat(min(max(fraction, 0), 1)) : 0))
             }
-        )
-    }
-
-    private func metricCard(_ metric: MetricItem) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                HStack(spacing: 6) {
-                    Circle().fill(metric.color).frame(width: 7, height: 7)
-                    Text(metric.label)
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundColor(AppTheme.textTertiary)
-                        .textCase(.uppercase)
-                        .kerning(0.5)
-                }
-                Spacer()
-                Text("Last 28 days")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundColor(AppTheme.textTertiary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color(.systemFill))
-                    .cornerRadius(6)
-            }
-            .padding(.bottom, 12)
-
-            Text(metric.value)
-                .font(.system(size: 52, weight: .heavy, design: .rounded))
-                .foregroundColor(AppTheme.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-                .padding(.bottom, 2)
-
-            Text(metric.delta)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundColor(
-                    metric.isPositive == true ? AppTheme.success :
-                    metric.isPositive == false ? .red :
-                    AppTheme.textTertiary
-                )
-                .padding(.bottom, 16)
-
-            SparklineView(dataPoints: metric.dataPoints, color: metric.color)
-                .frame(height: 150)
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            ZStack {
-                // Deep black base
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color(red: 0.05, green: 0.05, blue: 0.07))
-
-                // Shimmer highlight — top edge gloss
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.09),
-                                Color.white.opacity(0.03),
-                                Color.clear
-                            ],
-                            startPoint: .top,
-                            endPoint: .init(x: 0.5, y: 0.45)
-                        )
-                    )
-            }
-        )
-        .cornerRadius(20)
-        .overlay(
-            RoundedRectangle(cornerRadius: 20)
-                .stroke(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.15), Color.white.opacity(0.04)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 0.6
-                )
-        )
+        .frame(height: height)
+        .onAppear {
+            withAnimation(.easeOut(duration: 1.0).delay(0.15)) { shown = true }
+        }
     }
 }
 
-// MARK: - SparklineView
+// MARK: - Trend chart (line + soft fade, no axes)
+
+private struct TrendChart: View {
+    let values: [Double]
+    let color: Color
+
+    var body: some View {
+        GeometryReader { g in
+            let w = g.size.width, h = g.size.height
+            let minV = values.min() ?? 0
+            let maxV = values.max() ?? 1
+            let range = max(maxV - minV, 0.0001)
+            let inset: CGFloat = 6
+            let step = (w - inset * 2) / CGFloat(max(values.count - 1, 1))
+            let points = values.enumerated().map { i, v in
+                CGPoint(
+                    x: inset + CGFloat(i) * step,
+                    y: inset + (h - inset * 2) * (1 - CGFloat((v - minV) / range))
+                )
+            }
+
+            ZStack {
+                Path { p in
+                    guard let first = points.first, let last = points.last else { return }
+                    p.move(to: CGPoint(x: first.x, y: h))
+                    points.forEach { p.addLine(to: $0) }
+                    p.addLine(to: CGPoint(x: last.x, y: h))
+                    p.closeSubpath()
+                }
+                .fill(LinearGradient(
+                    colors: [color.opacity(0.22), color.opacity(0)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ))
+
+                Path { p in
+                    guard let first = points.first else { return }
+                    p.move(to: first)
+                    points.dropFirst().forEach { p.addLine(to: $0) }
+                }
+                .stroke(color, style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+
+                if let last = points.last {
+                    Circle()
+                        .fill(color)
+                        .frame(width: 9, height: 9)
+                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                        .position(last)
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+private struct HomeScrollKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+// MARK: - SparklineView (kept, in case other screens use it)
 struct SparklineView: View {
     let dataPoints: [Double]
     let color: Color
@@ -846,7 +1085,7 @@ struct SparklineView: View {
             let minVal = dataPoints.min() ?? 0
             let maxVal = dataPoints.max() ?? 1
             let range = maxVal - minVal == 0 ? 1 : maxVal - minVal
-            let step = w / CGFloat(dataPoints.count - 1)
+            let step = w / CGFloat(max(dataPoints.count - 1, 1))
 
             let points: [CGPoint] = dataPoints.enumerated().map { i, val in
                 CGPoint(

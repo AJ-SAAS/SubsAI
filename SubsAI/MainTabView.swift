@@ -5,7 +5,7 @@ struct MainTabView: View {
     @StateObject private var coachVM = CoachViewModel(autoLoad: false)
     @StateObject private var purchaseVM = PurchaseViewModel()
 
-    @ObservedObject private var auth = AuthManager.shared   // ← Added to check demo mode
+    @ObservedObject private var auth = AuthManager.shared
 
     @State private var selectedTab = 0
     @State private var showPaywall = false
@@ -43,22 +43,20 @@ struct MainTabView: View {
         }
         .tint(AppTheme.accent)
         .fullScreenCover(isPresented: $showPaywall) {
-            PaywallView()
+            PaywallContainer()
                 .onDisappear {
-                    purchaseVM.checkSubscriptionStatus()
-                    
-                    // If user closed with X → go back to Home
-                    if !purchaseVM.isPremium {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            selectedTab = 0
+                    // Wait for the real subscription status before deciding where to go.
+                    // (Before, this checked too early, so people who just paid got sent to Home.)
+                    Task {
+                        await purchaseVM.checkSubscriptionStatusAsync()
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        
+                        if purchaseVM.isPremium, let pending = pendingTab {
+                            selectedTab = pending          // Subscribed → the tab they wanted
+                        } else {
+                            selectedTab = 0                // Closed with X → Home
                         }
-                    }
-                    // If subscribed → go to the tab they wanted
-                    else if let pending = pendingTab {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            selectedTab = pending
-                            pendingTab = nil
-                        }
+                        pendingTab = nil
                     }
                 }
         }

@@ -4,7 +4,7 @@ import SwiftUI
 // MARK: - WELCOME / ONBOARDING (3 screens)
 // Screen 1: 2am stats (PersonNight image + stats card that won't move)
 // Screen 2: Road to 1M subs (glowing road + confetti)
-// Screen 3: 3 tips reveal (videos into orb, 3 tip cards, summary)
+// Screen 3: growth plan reveal (videos into orb, 3 cards, summary)
 // =============================================================
 
 struct WelcomeView: View {
@@ -136,6 +136,7 @@ struct WelcomeView: View {
             
             // Animated title (plays first)
             OnboardingTitle(kind: page.kind, isActive: isActive)
+                .id(isActive)   // fresh start every time this page opens
                 .padding(.horizontal, 24)
                 .frame(width: geo.size.width)
             
@@ -160,6 +161,7 @@ struct WelcomeView: View {
                 
                 // Animated visual (plays right after the title)
                 visual(for: page.kind, isActive: isActive, size: imageSize)
+                    .id(isActive)   // fresh start every time this page opens
                     .frame(width: imageSize, height: imageSize)
                     .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
                     .overlay(
@@ -247,7 +249,7 @@ struct OnboardingTitle: View {
             ]
         case .tips:
             return [
-                Text("Get 3 tips"),
+                Text("Get your growth plan"),
                 Text("in ") + Text("60 seconds").foregroundColor(OB.gold)
             ]
         }
@@ -310,8 +312,7 @@ struct NightStatsScene: View {
     @State private var shakes: CGFloat = 0
     @State private var showToast = false
     
-    private let times = ["2:14 AM", "2:31 AM", "2:47 AM"]
-    private let viewSteps = [270_772, 270_773, 270_775]
+    private let times = ["2:14 AM", "2:31 AM", "2:47 AM", "3:02 AM", "3:18 AM", "3:35 AM"]
     
     private let cardFill  = Color(red: 0.086, green: 0.078, blue: 0.141)
     private let textMain  = Color(red: 0.85, green: 0.84, blue: 0.90)
@@ -367,31 +368,34 @@ struct NightStatsScene: View {
                 return
             }
             
-            try? await Task.sleep(nanoseconds: 350_000_000)
+            // First refresh starts right away
+            withAnimation(.easeInOut(duration: 0.6)) { rotation += 360 }
             
+            // "0 new subs today" at 0.3s, then it stays
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            if Task.isCancelled { return }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showToast = true }
+            
+            // Views tick up, subs stay stuck
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            if Task.isCancelled { return }
+            withAnimation(.easeOut(duration: 0.25)) { views += Int.random(in: 1...3) }
+            withAnimation(.linear(duration: 0.35)) { shakes += 1 }
+            
+            // Then keep refreshing: clock moves on, views go up, subs never move
+            var step = 1
             while !Task.isCancelled {
-                for step in 0..<3 {
-                    withAnimation(.easeInOut(duration: 0.25)) { timeIndex = step }
-                    withAnimation(.easeInOut(duration: 0.7)) { rotation += 360 }
-                    try? await Task.sleep(nanoseconds: 700_000_000)
-                    if Task.isCancelled { return }
-                    
-                    withAnimation(.easeOut(duration: 0.25)) { views = viewSteps[step] }
-                    withAnimation(.linear(duration: 0.35)) { shakes += 1 }
-                    try? await Task.sleep(nanoseconds: 1_300_000_000)
-                    if Task.isCancelled { return }
-                }
-                
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { showToast = true }
-                try? await Task.sleep(nanoseconds: 1_800_000_000)
+                try? await Task.sleep(nanoseconds: 1_400_000_000)
                 if Task.isCancelled { return }
                 
-                withAnimation(.easeOut(duration: 0.3)) {
-                    showToast = false
-                    timeIndex = 0
-                    views = 270_771
-                }
-                try? await Task.sleep(nanoseconds: 500_000_000)
+                withAnimation(.easeInOut(duration: 0.25)) { timeIndex = min(step, times.count - 1) }
+                withAnimation(.easeInOut(duration: 0.6)) { rotation += 360 }
+                try? await Task.sleep(nanoseconds: 550_000_000)
+                if Task.isCancelled { return }
+                
+                withAnimation(.easeOut(duration: 0.25)) { views += Int.random(in: 1...3) }
+                withAnimation(.linear(duration: 0.35)) { shakes += 1 }
+                step += 1
             }
         }
     }
@@ -647,7 +651,7 @@ struct TipsRevealView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Example: SubsAI checks your videos and finds 3 tips. Your next video idea, make more how-tos, and keep it under 8 minutes.")
+        .accessibilityLabel("Example: SubsAI checks your videos and builds your growth plan. Your next video idea, make more how-tos, and keep it under 8 minutes.")
         .task(id: isActive) {
             reset()
             guard isActive else { return }
@@ -755,9 +759,10 @@ struct TipsRevealView: View {
     
     private var summary: some View {
         VStack(spacing: 9) {
-            Text("3 tips found 🎉")
-                .font(.system(size: 22, weight: .heavy))
+            Text("Your growth plan\nis ready 🎉")
+                .font(.system(size: 20, weight: .heavy))
                 .foregroundColor(.white)
+                .multilineTextAlignment(.center)
                 .padding(.bottom, 2)
             
             ForEach(0..<3, id: \.self) { i in
@@ -1185,16 +1190,16 @@ struct RoadmapView: View {
             return
         }
         
-        // Let the title land first
-        try? await Task.sleep(nanoseconds: 400_000_000)
+        // Start as the first title line lands
+        try? await Task.sleep(nanoseconds: 200_000_000)
         
         for i in 1..<milestones.count {
             if Task.isCancelled { return }
             
-            withAnimation(.easeInOut(duration: 0.8)) {
+            withAnimation(.easeInOut(duration: 0.6)) {
                 progress = stops[i]
             }
-            try? await Task.sleep(nanoseconds: 800_000_000)
+            try? await Task.sleep(nanoseconds: 600_000_000)
             if Task.isCancelled { return }
             
             withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
@@ -1204,7 +1209,7 @@ struct RoadmapView: View {
             UIImpactFeedbackGenerator(style: big ? .medium : .light).impactOccurred()
             
             // Pause a bit longer at 1K so "Monetize" sinks in
-            let pause: UInt64 = (i == 1) ? 700_000_000 : 300_000_000
+            let pause: UInt64 = (i == 1) ? 500_000_000 : 150_000_000
             try? await Task.sleep(nanoseconds: pause)
         }
     }

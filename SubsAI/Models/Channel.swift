@@ -11,6 +11,10 @@ struct Channel: Codable, Identifiable {
     var thumbnailCTR: Double = 0
     let profilePicURL: String
     let bannerURL: String?
+    
+    /// true when the creator hides their sub count (or YouTube didn't send it).
+    /// When true, `subscribers` is NOT a real number, so never show it.
+    var subscribersHidden: Bool? = nil
 
     // Default initializer
     init(
@@ -22,7 +26,8 @@ struct Channel: Codable, Identifiable {
         videoCount: Int = 0,
         thumbnailCTR: Double = 0,
         profilePicURL: String = "",
-        bannerURL: String? = nil
+        bannerURL: String? = nil,
+        subscribersHidden: Bool? = nil
     ) {
         self.id = id
         self.name = name
@@ -33,6 +38,7 @@ struct Channel: Codable, Identifiable {
         self.thumbnailCTR = thumbnailCTR
         self.profilePicURL = profilePicURL
         self.bannerURL = bannerURL
+        self.subscribersHidden = subscribersHidden
     }
 }
 
