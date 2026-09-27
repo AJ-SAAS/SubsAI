@@ -224,27 +224,34 @@ final class HomeViewModel: ObservableObject {
 
                 video.views               = views
                 video.averageViewDuration = avgDuration
-                // NOTE: this CTR is not real (the API doesn't give it here).
-                // Home no longer shows it. Other screens still read it, so it's left as is for now.
-                video.thumbnailCTR        = retention > 0 ? 0.07 : 0.03
+                // CTR is filled in below from YouTube's reach reports (0 = not known yet).
+                // Usual views aren't known here, so 0 (the Coach tab works that out).
+                video.thumbnailCTR        = 0
                 video.analytics           = VideoAnalytics(
-                    ctr:                 video.thumbnailCTR,
+                    ctr:                 0,
                     averageViewDuration: avgDuration,
                     retention:           retention,
-                    expectedViews:       max(views, 1000)
+                    expectedViews:       0
                 )
             }
 
-            self.latestVideo = video
-
-            // NEW: ranking + real CTR
-            let recent: [(id: String, published: Date)] = playlistResponse.items.compactMap { item in
+            var recent: [(id: String, published: Date)] = playlistResponse.items.compactMap { item in
                 guard
                     let id = item.contentDetails?.videoId,
                     let date = item.snippet?.publishedAt.flatMap({ formatter.date(from: $0) })
                 else { return nil }
                 return (id, date)
             }
+
+            // Short or long video? Rank Shorts only against Shorts, long only against long.
+            let formats = await YouTubeService.shared.fetchFormats(videoIds: recent.map { $0.id })
+            video.format = formats[videoId]
+            let latestIsShort = video.isShort
+            recent = recent.filter { (formats[$0.id] == .short) == latestIsShort }
+
+            self.latestVideo = video
+
+            // Ranking + real CTR
             await loadRankAndCTR(latest: video, recent: recent)
 
         } catch {
@@ -277,8 +284,23 @@ final class HomeViewModel: ObservableObject {
         }
 
         let stats = await statsTask
-        latestCTR = stats[latest.videoId]?.ctr
-        latestImpressions = stats[latest.videoId]?.impressions
+        // Shorts are swiped to, not clicked, so thumbnail CTR doesn't apply to them
+        latestCTR = latest.isShort ? nil : stats[latest.videoId]?.ctr
+        latestImpressions = latest.isShort ? nil : stats[latest.videoId]?.impressions
+
+        // Put the real CTR on the video too, so the deep analysis page gets it
+        if let ctr = latestCTR, var video = latestVideo, let old = video.analytics {
+            video.thumbnailCTR = ctr
+            video.analytics = VideoAnalytics(
+                ctr: ctr,
+                averageViewDuration: old.averageViewDuration,
+                retention: old.retention,
+                expectedViews: old.expectedViews,
+                subscribersGained: old.subscribersGained,
+                impressions: latestImpressions
+            )
+            latestVideo = video
+        }
     }
 
     // MARK: - Helpers

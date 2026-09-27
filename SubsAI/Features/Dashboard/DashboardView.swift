@@ -1,4 +1,3 @@
-
 // Features/Dashboard/DashboardView.swift
 // New Home: minimal white page, black + purple gradient header,
 // milestone + streak cards, then stacked cards: latest video, views, subs, watch time, goals.
@@ -23,7 +22,8 @@ enum HomeLook {
 
 struct DashboardView: View {
     @StateObject private var vm = HomeViewModel()
-    var coachVM: CoachViewModel
+    @ObservedObject var coachVM: CoachViewModel
+    @ObservedObject private var premium = PremiumStatus.shared
 
     @State private var showGoalSheet = false
     @State private var authErrorMessage: String?
@@ -148,6 +148,7 @@ struct DashboardView: View {
         }
         .onAppear {
             Task { await vm.loadChannelStats() }
+            Task { await premium.refresh() }
             attemptReviewRequest()
         }
         .onReceive(NotificationCenter.default.publisher(for: .authRestored)) { _ in
@@ -500,14 +501,21 @@ struct DashboardView: View {
 
     private var latestVideoSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("LATEST VIDEO")
+            Text((vm.latestVideo?.isShort ?? false) ? "LATEST SHORT" : "LATEST VIDEO")
                 .font(.system(size: 11, weight: .semibold))
                 .kerning(1.1)
                 .foregroundColor(.white.opacity(0.55))
 
             if let video = vm.latestVideo {
+                // Everyone gets the full review of their latest video.
+                // Free users see it as a preview (deep analysis locked).
                 NavigationLink {
-                    VideoDeepAnalysisView(video: video, allVideos: [video])
+                    CoachReviewView(
+                        video: coachVM.videos.first { $0.videoId == video.videoId } ?? video,
+                        allVideos: coachVM.videos,
+                        vm: coachVM,
+                        isFreePreview: !premium.isPremium
+                    )
                 } label: {
                     latestVideoRow(video)
                 }
@@ -563,6 +571,18 @@ struct DashboardView: View {
                     .foregroundColor(.white.opacity(0.45))
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            HStack(spacing: 6) {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 12, weight: .bold))
+                Text(premium.isPremium ? "See the full video review" : "Free: see what's holding it back")
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 13, weight: .bold))
+            }
+            .foregroundColor(HomeLook.purpleLight)
+            .padding(.top, 2)
         }
         .contentShape(Rectangle())
     }
@@ -594,7 +614,10 @@ struct DashboardView: View {
                 value: video.averageViewDuration > 0 ? duration(video.averageViewDuration) : "-",
                 label: "Avg. watch",
                 note: retention > 0 ? "\(Int((retention * 100).rounded()))% watched" : nil,
-                noteColor: retention >= 0.5 ? HomeLook.purpleLight : (retention >= 0.35 ? .white.opacity(0.6) : HomeLook.orange)
+                // Shorts are short, so people watch most of them. Judge them on a higher bar.
+                noteColor: video.isShort
+                    ? (retention >= 0.9 ? HomeLook.purpleLight : (retention >= 0.7 ? .white.opacity(0.6) : HomeLook.orange))
+                    : (retention >= 0.5 ? HomeLook.purpleLight : (retention >= 0.35 ? .white.opacity(0.6) : HomeLook.orange))
             )
         }
     }
@@ -640,9 +663,10 @@ struct DashboardView: View {
         var parts: [String] = []
         if let rank = vm.latestRank {
             let dayWord = rank.days == 1 ? "day" : "days"
-            parts.append("Ranked by views in the first \(rank.days) \(dayWord), vs. your last \(rank.total) videos.")
+            let kind = (vm.latestVideo?.isShort ?? false) ? "Shorts" : "long videos"
+            parts.append("Ranked by views in the first \(rank.days) \(dayWord), vs. your last \(rank.total) \(kind).")
         }
-        if vm.latestCTR == nil && !AuthManager.shared.isDemoMode {
+        if vm.latestCTR == nil && !(vm.latestVideo?.isShort ?? false) && !AuthManager.shared.isDemoMode {
             parts.append("Thumbnail CTR shows up 1 to 2 days after you connect.")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " ")

@@ -9,7 +9,9 @@ import RevenueCat
 struct SettingsView: View {
 
     @ObservedObject private var auth = AuthManager.shared
-    @StateObject private var purchaseVM = PurchaseViewModel()
+    @StateObject private var purchaseVM = PurchaseViewModel()   // used for Restore
+    // Same Premium check as Home and Coach (RevenueCat "premium" entitlement)
+    @ObservedObject private var premium = PremiumStatus.shared
 
     @State private var showDisconnectAlert = false
     @State private var showDeleteAlert = false
@@ -106,11 +108,14 @@ struct SettingsView: View {
             } message: {
                 Text("This deletes your SubsAI account and all your data. You can't undo this.")
             }
-            .sheet(isPresented: $showPaywall) {
+            .sheet(isPresented: $showPaywall, onDismiss: {
+                // They may have just subscribed: update the card right away
+                Task { await premium.refresh() }
+            }) {
                 PaywallContainer()
             }
             .task {
-                purchaseVM.checkSubscriptionStatus()
+                await premium.refresh()
                 await loadChannel()
             }
         }
@@ -179,68 +184,125 @@ struct SettingsView: View {
     }
 
     // MARK: - Premium card
+    // Not subscribed: black card with a purple tint. Tap = paywall.
+    // Subscribed: gold card that confirms full access.
 
+    @ViewBuilder
     private var premiumCard: some View {
-        let isPremium = purchaseVM.isPremium
+        if premium.isPremium {
+            activePremiumCard
+        } else {
+            Button { showPaywall = true } label: { upgradeCard }
+                .buttonStyle(.plain)
+        }
+    }
 
-        return Button {
-            if !isPremium { showPaywall = true }
-        } label: {
-            HStack(spacing: 14) {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(HomeLook.purple)
-                    .frame(width: 44, height: 44)
-                    .overlay(
-                        Image(systemName: isPremium ? "checkmark.seal.fill" : "sparkles")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(.white)
-                    )
+    private var upgradeCard: some View {
+        HStack(spacing: 14) {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(HomeLook.purple)
+                .frame(width: 44, height: 44)
+                .overlay(
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
+                )
 
-                VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("SubsAI Premium")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.white)
+                Text("Get your full growth plan.")
+                    .font(.system(size: 14))
+                    .foregroundColor(.white.opacity(0.78))
+                Text("Every video review · Deep analysis · Coach")
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.55))
+            }
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundColor(.white)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(LinearGradient(
+                    stops: [
+                        .init(color: HomeLook.ink, location: 0),
+                        .init(color: HomeLook.ink, location: 0.55),
+                        .init(color: Color(red: 0.165, green: 0.078, blue: 0.439), location: 1) // #2A1470
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.28), radius: 16, x: 0, y: 10)
+    }
+
+    private var activePremiumCard: some View {
+        let ink = Color(red: 0.102, green: 0.071, blue: 0.024)          // #1A1206
+        let gold = LinearGradient(
+            stops: [
+                .init(color: Color(red: 0.965, green: 0.863, blue: 0.557), location: 0),     // #F6DC8E
+                .init(color: Color(red: 0.890, green: 0.714, blue: 0.298), location: 0.55),  // #E3B64C
+                .init(color: Color(red: 0.788, green: 0.588, blue: 0.184), location: 1)      // #C9962F
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        return HStack(spacing: 14) {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(ink)
+                .frame(width: 44, height: 44)
+                .overlay(
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(Color(red: 0.965, green: 0.863, blue: 0.557))
+                )
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
                     Text("SubsAI Premium")
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.white)
-                    Text(isPremium ? "You have full access. Thanks!" : "Get your full growth plan.")
-                        .font(.system(size: 14))
-                        .foregroundColor(.white.opacity(0.78))
-                    if !isPremium {
-                        Text("Weekly plan · Video ideas · Coach")
-                            .font(.system(size: 12))
-                            .foregroundColor(.white.opacity(0.55))
-                    }
+                        .foregroundColor(ink)
+                    Text("ACTIVE")
+                        .font(.system(size: 10, weight: .heavy))
+                        .kerning(0.8)
+                        .foregroundColor(Color(red: 0.965, green: 0.863, blue: 0.557))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(ink))
                 }
-
-                Spacer(minLength: 0)
-
-                if !isPremium {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(.white)
-                }
+                Text("You're subscribed. You have full access.")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(ink.opacity(0.85))
+                Text("Every video review · Deep analysis · Coach")
+                    .font(.system(size: 12))
+                    .foregroundColor(ink.opacity(0.65))
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 20)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(LinearGradient(
-                        stops: [
-                            .init(color: HomeLook.ink, location: 0),
-                            .init(color: HomeLook.ink, location: 0.55),
-                            .init(color: Color(red: 0.165, green: 0.078, blue: 0.439), location: 1) // #2A1470
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(Color.white.opacity(0.14), lineWidth: 1)
-            )
-            .shadow(color: Color.black.opacity(0.28), radius: 16, x: 0, y: 10)
+
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
-        .disabled(isPremium)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(gold))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.white.opacity(0.35), lineWidth: 1)
+        )
+        .shadow(color: Color(red: 0.89, green: 0.71, blue: 0.30).opacity(0.3), radius: 16, x: 0, y: 10)
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Groups
@@ -432,7 +494,9 @@ struct SettingsView: View {
     private func restorePurchases() async {
         isRestoring = true
         await purchaseVM.restorePurchases()
+        await premium.refresh()
         isRestoring = false
+        statusMessage = premium.isPremium ? "Premium restored. You have full access." : "No purchases found to restore."
     }
 
     private func openURL(_ string: String) {

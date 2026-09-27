@@ -1,4 +1,7 @@
 // Features/VideoAnalytics/VideoDeepAnalysisView.swift
+// Premium deep analysis: dark purple page, white cards, three tabs.
+// Hook = the first minute. Retention = the whole video. Compare = vs your other videos.
+// Uses ReviewLook + PremiumWhiteCard from CoachReviewView.swift and HomeLook from DashboardView.swift.
 import SwiftUI
 
 struct VideoDeepAnalysisView: View {
@@ -15,112 +18,162 @@ struct VideoDeepAnalysisView: View {
     }
 
     enum AnalysisTab: String, CaseIterable {
-        case hook      = "Hook 0–15s"
+        case hook      = "Hook"
         case retention = "Retention"
         case compare   = "Compare"
     }
 
     var body: some View {
-        ZStack {
-            AppTheme.background.ignoresSafeArea()
+        ZStack(alignment: .top) {
+            ReviewLook.background.ignoresSafeArea()
+            RadialGradient(
+                colors: [Color(red: 0.43, green: 0.24, blue: 1.0).opacity(0.35), .clear],
+                center: .top, startRadius: 0, endRadius: 360
+            )
+            .frame(height: 420)
+            .ignoresSafeArea()
 
-            VStack(spacing: 0) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    header
+                    tabPicker
 
-                // MARK: - Video header
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(video.title)
-                        .font(.system(size: 17, weight: .medium, design: .serif)) // was 16
-                        .foregroundColor(AppTheme.textPrimary)
-                        .lineLimit(2)
-                    Text(videoMetaText)
-                        .font(.system(size: 13)) // was 12
-                        .foregroundColor(AppTheme.textSecondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-
-                Divider()
-
-                // MARK: - Tab picker
-                HStack(spacing: 0) {
-                    ForEach(AnalysisTab.allCases, id: \.self) { tab in
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                selectedTab = tab
-                            }
-                        } label: {
-                            VStack(spacing: 6) {
-                                Text(tab.rawValue)
-                                    .font(.system(size: 15)) // was 14
-                                    .fontWeight(selectedTab == tab ? .semibold : .regular)
-                                    .foregroundColor(
-                                        selectedTab == tab
-                                            ? AppTheme.accent
-                                            : AppTheme.textSecondary
-                                    )
-                                Rectangle()
-                                    .fill(selectedTab == tab ? AppTheme.accent : Color.clear)
-                                    .frame(height: 2)
-                            }
+                    if vm.isLoading && selectedTab != .compare {
+                        loadingCard
+                    } else {
+                        switch selectedTab {
+                        case .hook:
+                            HookAnalysisView(vm: vm, allVideos: allVideos)
+                        case .retention:
+                            RetentionCurveView(vm: vm)
+                        case .compare:
+                            VideoCompareView(currentVideo: video, allVideos: allVideos)
                         }
-                        .frame(maxWidth: .infinity)
                     }
+
+                    Spacer(minLength: 100)
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
                 .padding(.top, 8)
-
-                Divider()
-
-                // MARK: - Tab content
-                if vm.isLoading {
-                    loadingState
-                } else if let analysis = vm.analysis {
-
-                    if let error = vm.errorMessage {
-                        HStack(spacing: 8) {
-                            Image(systemName: "info.circle")
-                                .foregroundColor(.orange)
-                                .font(.caption)
-                            Text(error)
-                                .font(.caption)
-                                .foregroundColor(AppTheme.textSecondary)
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 10)
-                    }
-
-                    switch selectedTab {
-                    case .hook:
-                        HookAnalysisView(analysis: analysis)
-                    case .retention:
-                        RetentionCurveView(analysis: analysis)
-                    case .compare:
-                        VideoCompareView(currentVideo: video, allVideos: allVideos)
-                    }
-                }
             }
         }
-        .navigationTitle("Deep Analysis")
+        .navigationTitle("Deep analysis")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await vm.load() }
-    }
-
-    private var loadingState: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            ProgressView()
-            Text("Analyzing your video…")
-                .font(.subheadline)
-                .foregroundColor(AppTheme.textSecondary)
-            Spacer()
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .tint(.white)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 4) {
+                    Image(systemName: "sparkle").font(.system(size: 11, weight: .bold))
+                    Text("Premium").font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundColor(ReviewLook.premium)
+            }
         }
-        .frame(maxWidth: .infinity)
+        .task { await vm.load(allVideos: allVideos) }
     }
 
-    private var videoMetaText: String {
-        let views = video.views > 0 ? "\(video.views.formatted()) views · " : ""
-        let days = Calendar.current.dateComponents([.day], from: video.publishedAt, to: Date()).day ?? 0
-        return "\(views)\(days)d ago"
+    // MARK: - Header
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            VideoThumbnailView(video: video)
+                .frame(width: 96, height: 54)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(video.title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .lineLimit(2)
+                Text(metaText)
+                    .font(.system(size: 13))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var metaText: String {
+        var parts: [String] = []
+        if let d = vm.insights?.durationSeconds {
+            parts.append(String(format: "%d:%02d long", d / 60, d % 60))
+        }
+        if video.views > 0 { parts.append("\(video.views.formatted()) views") }
+        return parts.joined(separator: " · ")
+    }
+
+    // MARK: - Tabs (glass pill, white when selected)
+
+    private var tabPicker: some View {
+        HStack(spacing: 4) {
+            ForEach(AnalysisTab.allCases, id: \.self) { tab in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { selectedTab = tab }
+                } label: {
+                    Text(tab.rawValue)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(selectedTab == tab ? HomeLook.ink : .white.opacity(0.75))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 36)
+                        .background(
+                            Capsule().fill(selectedTab == tab ? Color.white : Color.clear)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(Capsule().fill(Color.white.opacity(0.1)))
+        .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+    }
+
+    private var loadingCard: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+            Text("Reading how people watched this video...")
+                .font(.system(size: 15))
+                .foregroundColor(HomeLook.secondary)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(PremiumWhiteCard())
+    }
+}
+
+// MARK: - Shared bits for the three tabs
+
+enum DeepFormat {
+    static func time(_ seconds: Int) -> String { String(format: "%d:%02d", seconds / 60, seconds % 60) }
+    static func pct(_ value: Double) -> String { "\(Int((value * 100).rounded()))%" }
+}
+
+struct DeepSectionLabel: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11, weight: .semibold))
+            .kerning(1.1)
+            .foregroundColor(HomeLook.secondary)
+    }
+}
+
+/// Shown when YouTube doesn't have retention data for a video yet
+struct DeepNoDataCard: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Not enough data yet")
+                .font(.system(size: 19, weight: .bold))
+                .foregroundColor(HomeLook.ink)
+            Text("YouTube shows how people watch once a video has more views. Check back in a few days.")
+                .font(.system(size: 15))
+                .foregroundColor(HomeLook.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(PremiumWhiteCard())
     }
 }

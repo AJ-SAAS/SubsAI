@@ -1,624 +1,865 @@
 // Features/Coach/CoachReviewView.swift
+// Premium video review: dark purple to black page, white cards.
+// Order: your next fix (with why we picked it), deep analysis (gold), views trend, compared to your usual, what's working.
+// Uses HomeLook colors from DashboardView.swift.
 import SwiftUI
+
+// MARK: - Colors for this page
+
+/// Shared with the deep analysis pages
+enum ReviewLook {
+    static let good      = Color(red: 0.122, green: 0.659, blue: 0.400)  // #1FA866 lines + bars
+    static let goodText  = Color(red: 0.082, green: 0.525, blue: 0.310)  // #15864F text on white
+    static let bad       = HomeLook.orange                               // #E8772E
+    static let badText   = HomeLook.orangeText                           // #B45309
+    static let usualBar  = HomeLook.purpleLight                         // #8C63FF "your usual" bars
+    static let premium   = Color(red: 0.718, green: 0.612, blue: 1.0)    // #B79CFF
+
+    static let background = LinearGradient(
+        stops: [
+            .init(color: Color(red: 0.149, green: 0.067, blue: 0.310), location: 0),     // #26114F
+            .init(color: Color(red: 0.090, green: 0.039, blue: 0.200), location: 0.25),  // #170A33
+            .init(color: Color(red: 0.043, green: 0.024, blue: 0.094), location: 0.55),  // #0B0618
+            .init(color: Color(red: 0.020, green: 0.020, blue: 0.020), location: 1)      // #050505
+        ],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+
+    static let gold = LinearGradient(
+        stops: [
+            .init(color: Color(red: 0.965, green: 0.863, blue: 0.557), location: 0),     // #F6DC8E
+            .init(color: Color(red: 0.890, green: 0.714, blue: 0.298), location: 0.55),  // #E3B64C
+            .init(color: Color(red: 0.788, green: 0.588, blue: 0.184), location: 1)      // #C9962F
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    static let goldInk = Color(red: 0.102, green: 0.071, blue: 0.024)                    // #1A1206
+}
 
 struct CoachReviewView: View {
     let video: Video
     var allVideos: [Video] = []
-    var postingTimeInsight: PostingTimeInsight? = nil
+    var postingTimeInsight: PostingTimeInsight? = nil   // kept so CoachView still compiles
     var vm: CoachViewModel? = nil
+    /// Free users get the full review on their latest video only (from Home).
+    /// Deep analysis stays locked, and an upgrade card shows at the bottom.
+    var isFreePreview: Bool = false
 
-    private var verdict: CoachVerdict { video.verdict }
-    private var fix: CoachFix { video.primaryFix }
+    @State private var showPaywall = false
+    @State private var dailyViews: [Double]? = nil
+    @State private var insights: VideoInsights? = nil
+    @State private var hookBaseline: HookBaseline? = nil
+    @State private var insightsLoaded = false
 
-    private var daysAgo: String {
-        let days = Calendar.current.dateComponents([.day], from: video.publishedAt, to: Date()).day ?? 0
-        if days == 0 { return "Today" }
-        if days == 1 { return "Yesterday" }
-        return "\(days) days ago"
-    }
-
-    private var gpvColor: Color {
-        let gpv = video.growthPerView
-        if gpv >= 3.0 { return .green }
-        if gpv >= 1.0 { return .yellow }
-        if gpv > 0    { return .red }
-        return AppTheme.textTertiary
-    }
-
-    // MARK: - Pattern detection across all videos
-    private var isPatternAcrossChannel: Bool {
-        guard allVideos.count >= 3 else { return false }
-        let videosWithData = allVideos.filter { $0.analytics != nil }
-        guard videosWithData.count >= 3 else { return false }
-
-        switch fix {
-        case .thumbnail:
-            let lowCTR = videosWithData.filter { ($0.analytics?.ctr ?? 0) < 0.05 }
-            return Double(lowCTR.count) / Double(videosWithData.count) >= 0.6
-        case .hook:
-            let lowRetention = videosWithData.filter { ($0.analytics?.retention ?? 0) < 0.30 }
-            return Double(lowRetention.count) / Double(videosWithData.count) >= 0.6
-        case .retention:
-            let midDrop = videosWithData.filter { ($0.analytics?.retention ?? 0) < 0.35 }
-            return Double(midDrop.count) / Double(videosWithData.count) >= 0.6
-        case .discovery:
-            let belowExpected = videosWithData.filter {
-                $0.views < ($0.analytics?.expectedViews ?? 0)
-            }
-            return Double(belowExpected.count) / Double(videosWithData.count) >= 0.6
-        case .none:
-            return false
-        }
-    }
-
-    private var patternText: String {
-        let videosWithData = allVideos.filter { $0.analytics != nil }
-        let total = videosWithData.count
-
-        switch fix {
-        case .thumbnail:
-            let count = videosWithData.filter { ($0.analytics?.ctr ?? 0) < 0.05 }.count
-            return "\(count) of your last \(total) videos have CTR below 5%. This is a channel-wide pattern, not just this video — your thumbnail strategy needs a systematic rethink."
-        case .hook:
-            let count = videosWithData.filter { ($0.analytics?.retention ?? 0) < 0.30 }.count
-            return "\(count) of your last \(total) videos have retention below 30%. Your hook is consistently losing people — this is the single highest-leverage thing to fix across your whole channel."
-        case .retention:
-            let count = videosWithData.filter { ($0.analytics?.retention ?? 0) < 0.35 }.count
-            return "\(count) of your last \(total) videos drop below 35% retention. Mid-video pacing is a channel pattern — add a re-hook every 3–4 minutes across all your upcoming videos."
-        case .discovery:
-            let count = videosWithData.filter {
-                $0.views < ($0.analytics?.expectedViews ?? 0)
-            }.count
-            return "\(count) of your last \(total) videos are underperforming on views despite decent CTR. This suggests a metadata pattern — your titles and descriptions may not be helping YouTube surface your content."
-        case .none:
-            return ""
-        }
-    }
-
-    private var isolatedText: String {
-        switch fix {
-        case .thumbnail:
-            return "This is isolated to this video — your other videos have decent CTR. Something specific about this thumbnail or title isn't landing."
-        case .hook:
-            return "This is isolated to this video — your other videos hold retention better. Something specific about how this one starts isn't working."
-        case .retention:
-            return "This is isolated to this video — your retention is generally solid. There may be a specific section in this video where pacing dropped."
-        case .discovery:
-            return "This is isolated to this video — your other videos are getting expected views. Something specific about this video's metadata may be holding it back."
-        case .none:
-            return ""
-        }
-    }
-
-    // MARK: - Posting day label
-    private var publishedDayLabel: String {
-        let f = DateFormatter()
-        f.dateFormat = "EEE"
-        return f.string(from: video.publishedAt)
-    }
+    private var stats: VideoAnalytics? { video.analytics }
 
     var body: some View {
-        ZStack {
-            AppTheme.background.ignoresSafeArea()
+        ZStack(alignment: .top) {
+            ReviewLook.background.ignoresSafeArea()
+
+            // Soft purple glow behind the top of the page
+            RadialGradient(
+                colors: [Color(red: 0.43, green: 0.24, blue: 1.0).opacity(0.35), .clear],
+                center: .top, startRadius: 0, endRadius: 360
+            )
+            .frame(height: 420)
+            .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 14) {
-
-                    // MARK: - Thumbnail
-                    thumbnailSection
-
-                    // MARK: - Title
-                    Text(video.title)
-                        .font(.system(size: 18, weight: .medium, design: .serif))
-                        .foregroundColor(AppTheme.textPrimary)
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    // MARK: - Growth scorecard strip
-                    if video.analytics != nil {
-                        growthScorecardStrip
-                    }
-
-                    // MARK: - Verdict
-                    verdictCard
-
-                    // MARK: - Metrics
-                    metricsCard
-
-                    // MARK: - #1 Fix
-                    if fix != .none {
-                        fixCard
-                    }
-
-                    // MARK: - What's working
-                    workingWellCard
-
-                    // MARK: - Is this a pattern?
-                    if fix != .none {
-                        patternStrip
-                    }
-
-                    // MARK: - Deep Analyze button
-                    NavigationLink {
-                        VideoDeepAnalysisView(video: video, allVideos: allVideos)
-                    } label: {
-                        VStack(spacing: 6) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "waveform.path.ecg")
-                                    .font(.system(size: 15))
-                                Text("Deep analyze this video")
-                                    .font(.system(size: 15, weight: .medium))
-                                Image(systemName: "arrow.right")
-                                    .font(.system(size: 13))
-                            }
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(AppTheme.accent)
-                            .cornerRadius(16)
-
-                            Text("Hook analysis · Retention curve · Compare with your best videos")
-                                .font(.system(size: 11))
-                                .foregroundColor(AppTheme.textTertiary)
-                                .multilineTextAlignment(.center)
-                        }
-                    }
-                    .buttonStyle(.plain)
-
-                    Spacer(minLength: 40)
+                VStack(alignment: .leading, spacing: 16) {
+                    header
+                    nextFixCard
+                    deepAnalysisButton
+                    viewsCard
+                    compareCard
+                    workingCard
+                    if isFreePreview { upgradeCard }
+                    footnote
+                    Spacer(minLength: 100)
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, 12)
-                .padding(.bottom, 20)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
             }
         }
-        .navigationTitle("Video Review")
+        .navigationTitle("Video review")
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    // MARK: - Pattern strip
-    private var patternStrip: some View {
-        let isPattern = isPatternAcrossChannel
-        let color: Color = isPattern ? .orange : AppTheme.accent
-
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: isPattern ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                    .font(.system(size: 11))
-                    .foregroundColor(color)
-                Text(isPattern ? "Channel pattern" : "Isolated to this video")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(color)
-                    .kerning(1.0)
-                    .textCase(.uppercase)
-            }
-
-            Text(isPattern ? patternText : isolatedText)
-                .font(.system(size: 12))
-                .foregroundColor(AppTheme.textSecondary)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if isPattern, let vm = vm {
-                NavigationLink {
-                    IntelligenceView(vm: vm)
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("See full channel analysis in Intelligence")
-                            .font(.system(size: 12))
-                            .foregroundColor(color)
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 11))
-                            .foregroundColor(color)
-                    }
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .tint(.white)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 4) {
+                    Image(systemName: "sparkle")
+                        .font(.system(size: 11, weight: .bold))
+                    Text(isFreePreview ? "Free preview" : "Premium")
+                        .font(.system(size: 12, weight: .semibold))
                 }
-                .padding(.top, 2)
+                .foregroundColor(ReviewLook.premium)
             }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(color.opacity(0.06))
-        .cornerRadius(16)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(color.opacity(0.2), lineWidth: 0.5)
-        )
+        .task {
+            guard !insightsLoaded else { return }
+            // Shorts compare to Shorts, long videos to long videos
+            let recent = allVideos
+                .filter { $0.videoId != video.videoId && $0.isSameFormat(as: video) }
+                .sorted { $0.publishedAt > $1.publishedAt }
+
+            async let daily = YouTubeService.shared.fetchVideoDailyViews(videoId: video.videoId, publishedAt: video.publishedAt)
+            async let loadedInsights = YouTubeService.shared.fetchVideoInsights(videoId: video.videoId, publishedAt: video.publishedAt)
+            async let baseline = YouTubeService.shared.fetchHookBaseline(recentVideos: recent)
+
+            dailyViews = await daily
+            var loaded = await loadedInsights
+            loaded?.isShort = video.isShort
+            insights = loaded
+            hookBaseline = await baseline
+            withAnimation(.easeOut(duration: 0.25)) { insightsLoaded = true }
+        }
+        .sheet(isPresented: $showPaywall, onDismiss: {
+            Task { await PremiumStatus.shared.refresh() }
+        }) {
+            PaywallContainer()
+        }
     }
 
-    // MARK: - Thumbnail
-    private var thumbnailSection: some View {
-        ZStack(alignment: .bottomTrailing) {
+    // MARK: - Header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 12) {
             VideoThumbnailView(video: video)
                 .frame(height: 200)
-                .cornerRadius(16)
-                .clipped()
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .shadow(color: .black.opacity(0.45), radius: 20, x: 0, y: 12)
 
-            Text(daysAgo)
-                .font(.system(size: 11))
-                .foregroundColor(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(Color.black.opacity(0.55))
-                .cornerRadius(8)
-                .padding(10)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(video.title)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(video.isShort ? "Short · posted \(postedText)" : "Posted \(postedText)")
+                    .font(.system(size: 14))
+                    .foregroundColor(.white.opacity(0.6))
+            }
         }
     }
 
-    // MARK: - Growth scorecard strip
-    private var growthScorecardStrip: some View {
-        HStack(spacing: 0) {
-            ScorecardCell(
-                value: video.growthPerView > 0
-                    ? String(format: "%.1f", video.growthPerView)
-                    : "—",
-                label: "Subs / 1K views",
-                valueColor: video.growthPerView > 0 ? gpvColor : AppTheme.textTertiary
-            )
-
-            Divider().frame(height: 36)
-
-            ScorecardCell(
-                value: video.analytics.map {
-                    $0.averageViewDuration >= 60
-                        ? String(format: "%.1fm", Double($0.averageViewDuration) / 60.0)
-                        : "\($0.averageViewDuration)s"
-                } ?? "—",
-                label: "Avg watch time",
-                valueColor: AppTheme.textPrimary
-            )
-
-            Divider().frame(height: 36)
-
-            ScorecardCell(
-                value: video.analytics.map {
-                    String(format: "%.0f%%", $0.retention * 100)
-                } ?? "—",
-                label: "Retention",
-                valueColor: video.analytics.map {
-                    $0.retention >= 0.35 ? Color.green : ($0.retention >= 0.25 ? Color.yellow : Color.red)
-                } ?? AppTheme.textTertiary
-            )
-        }
-        .padding(.vertical, 14)
-        .background(AppTheme.cardBackground)
-        .cornerRadius(16)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(AppTheme.borderSubtle, lineWidth: 0.5)
-        )
+    private var postedText: String {
+        if video.ageInDays == 0 { return "today" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: video.publishedAt, relativeTo: Date())
     }
 
-    // MARK: - Verdict card
-    private var verdictCard: some View {
-        let isHealthy = fix == .none
-        let cardColor: Color = isHealthy ? .green : .red
-        let label = isHealthy ? "Performing well" : "Needs attention"
+    // MARK: - Your next fix (the main card)
 
+    private var diagnosis: VideoDiagnosis {
+        VideoDiagnosis.make(video: video, allVideos: allVideos, insights: insights, hookBaseline: hookBaseline)
+    }
+
+    @ViewBuilder
+    private var nextFixCard: some View {
+        if !insightsLoaded && video.analytics != nil && video.ageInDays >= 2 {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("YOUR NEXT FIX")
+                    .font(.system(size: 11, weight: .bold))
+                    .kerning(1.2)
+                    .foregroundColor(HomeLook.purple)
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Finding what's holding this video back...")
+                        .font(.system(size: 15))
+                        .foregroundColor(HomeLook.secondary)
+                }
+                .padding(.vertical, 12)
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .modifier(PremiumWhiteCard())
+        } else {
+            let d = diagnosis
+            let c = d.content
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text(c.label)
+                        .font(.system(size: 11, weight: .bold))
+                        .kerning(1.2)
+                        .foregroundColor(c.kind == .healthy ? ReviewLook.goodText : HomeLook.purple)
+                    Spacer()
+                    if let tag = c.tag {
+                        Text(tag)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(ReviewLook.badText)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(ReviewLook.bad.opacity(0.12)))
+                    }
+                }
+
+                Text(c.title)
+                    .font(.system(size: 24, weight: .heavy))
+                    .foregroundColor(HomeLook.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(c.evidence, id: \.self) { line in
+                        Text(LocalizedStringKey(line))
+                            .font(.system(size: 15))
+                            .foregroundColor(HomeLook.secondary)
+                            .lineSpacing(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                if c.showTraffic, let groups = insights?.trafficGroups, !groups.isEmpty {
+                    trafficBar(groups)
+                }
+
+                if !c.searchTerms.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        sectionLabel("PEOPLE FOUND IT BY SEARCHING")
+                        ForEach(c.searchTerms) { term in
+                            HStack(spacing: 6) {
+                                Text(term.term)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(HomeLook.ink)
+                                Text(Self.shortNumber(Double(term.views)))
+                                    .font(.system(size: 13))
+                                    .foregroundColor(HomeLook.secondary)
+                            }
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 7)
+                            .background(Capsule().fill(HomeLook.fill))
+                            .textSelection(.enabled)
+                        }
+                    }
+                }
+
+                if c.actionIntro != nil || c.actionText != nil {
+                    tryThisBox(c)
+                }
+
+                if let example = c.example {
+                    Text(LocalizedStringKey(example))
+                        .font(.system(size: 13))
+                        .foregroundColor(HomeLook.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let pattern = c.pattern {
+                    noteLine(icon: "square.stack.3d.up", text: pattern)
+                }
+                if let note = c.extraNote {
+                    noteLine(icon: "bubble.left", text: note)
+                }
+
+                if c.kind == .fix || c.kind == .healthy {
+                    Rectangle().fill(HomeLook.hairline).frame(height: 1)
+                    sectionLabel(c.kind == .fix ? "WHY WE PICKED THIS" : "HOW EACH STEP IS DOING")
+                    chainStrip(d.checks, steps: d.steps)
+                    Text(c.whyText)
+                        .font(.system(size: 13))
+                        .foregroundColor(HomeLook.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .modifier(PremiumWhiteCard())
+        }
+    }
+
+    private func noteLine(icon: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 13))
+                .foregroundColor(HomeLook.secondary)
+                .padding(.top, 1)
+            Text(text)
+                .font(.system(size: 13))
+                .foregroundColor(HomeLook.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // Where views came from: one bar split into Home, Suggested, Search, Other
+    private func trafficBar(_ groups: [VideoInsights.TrafficGroup]) -> some View {
+        let colors: [String: Color] = [
+            "Home": HomeLook.purple,
+            "Suggested": HomeLook.purpleLight,
+            "Search": ReviewLook.bad,
+            "Other": Color(red: 0.84, green: 0.84, blue: 0.86)
+        ]
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(cardColor)
-                    .frame(width: 6, height: 6)
-                Text(label)
-                    .font(.system(size: 16, weight: .semibold, design: .serif))
-                    .foregroundColor(cardColor)
+            sectionLabel("WHERE VIEWS CAME FROM")
+            GeometryReader { g in
+                HStack(spacing: 2) {
+                    ForEach(groups) { group in
+                        Rectangle()
+                            .fill(colors[group.name] ?? .gray)
+                            .frame(width: max(3, (g.size.width - CGFloat(groups.count - 1) * 2) * CGFloat(group.share)))
+                    }
+                }
+            }
+            .frame(height: 10)
+            .clipShape(Capsule())
+
+            LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)],
+                      alignment: .leading, spacing: 6) {
+                ForEach(groups) { group in
+                    HStack(spacing: 5) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(colors[group.name] ?? .gray)
+                            .frame(width: 8, height: 8)
+                        Text("\(group.name) \(Int((group.share * 100).rounded()))%")
+                            .font(.system(size: 12))
+                            .foregroundColor(HomeLook.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private func tryThisBox(_ c: DiagnosisContent) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("TRY THIS")
+                .font(.system(size: 11, weight: .bold))
+                .kerning(1.0)
+                .foregroundColor(HomeLook.ink)
+
+            if let intro = c.actionIntro {
+                Text(intro)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(HomeLook.ink)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Text(verdictText)
-                .font(.system(size: 15, weight: .medium, design: .serif))
-                .foregroundColor(AppTheme.textPrimary)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
+            if c.seoPhrase != nil {
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("1. Thumbnail file name")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(HomeLook.ink)
+                        if let file = c.seoFileName {
+                            Text(file)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundColor(HomeLook.secondary)
+                                .textSelection(.enabled)
+                        }
+                    }
+                    seoLine("2. Title,", "near the start")
+                    seoLine("3. Description,", "in the first 2 lines")
+                    seoLine("4. Tags,", c.searchTerms.count > 1 ? "plus the other search words above" : "plus 2 or 3 close versions")
+                    seoLine("5. In the video,", "say it in the first 30 seconds. YouTube reads your captions.")
+                }
+            }
+
+            if let action = c.actionText {
+                Text(action)
+                    .font(.system(size: 15))
+                    .foregroundColor(HomeLook.ink)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(cardColor.opacity(0.06))
-        .cornerRadius(18)
-        .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(cardColor.opacity(0.2), lineWidth: 0.5)
-        )
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(HomeLook.fill))
     }
 
-    private var verdictText: String {
-        guard let stats = video.analytics else {
-            return "Analytics are still loading for this video. Check back shortly."
-        }
-        switch fix {
-        case .thumbnail:
-            return "Your content is strong — but your thumbnail isn't getting clicked. Fix the packaging, not the video."
-        case .hook:
-            return "Viewers are clicking but leaving early. Your hook isn't holding them. The first 30 seconds need work."
-        case .retention:
-            return "Good start, but viewers are dropping before your best content. Your pacing needs attention mid-video."
-        case .discovery:
-            return "This video performs well when watched — but YouTube isn't surfacing it enough. A metadata issue, not a content issue."
-        case .none:
-            let ret = Int(stats.retention * 100)
-            let ctr = String(format: "%.1f", stats.ctr * 100)
-            return "This video is working. \(ctr)% CTR and \(ret)% retention — both above benchmark. Study this format and repeat it."
-        }
+    private func seoLine(_ bold: String, _ rest: String) -> some View {
+        (Text(bold).font(.system(size: 14, weight: .semibold)).foregroundColor(HomeLook.ink)
+         + Text(" " + rest).font(.system(size: 14)).foregroundColor(HomeLook.secondary))
+            .fixedSize(horizontal: false, vertical: true)
     }
 
-    // MARK: - Metrics card
-    private var metricsCard: some View {
-        let postingTimeLine = postingTimeInsight?.reviewLine(for: video)
-        let hasPostingTimeRow = postingTimeLine != nil
-
-        return VStack(spacing: 0) {
-            if let stats = video.analytics {
-                ReviewMetricRow(
-                    name: "Click-through rate",
-                    value: String(format: "%.1f%%", stats.ctr * 100),
-                    benchmark: "Benchmark: 5–7%",
-                    progress: min(stats.ctr / 0.07, 1.0),
-                    isGood: stats.ctr >= 0.05,
-                    explanation: ctrExplanation(stats.ctr),
-                    isLast: false
-                )
-                ReviewMetricRow(
-                    name: "Retention",
-                    value: String(format: "%.0f%%", stats.retention * 100),
-                    benchmark: stats.retention >= 0.35 ? "Above benchmark" : "Benchmark: 35%+",
-                    progress: min(stats.retention / 0.50, 1.0),
-                    isGood: stats.retention >= 0.35,
-                    explanation: retentionExplanation(stats.retention),
-                    isLast: false
-                )
-                ReviewMetricRow(
-                    name: "Views",
-                    value: formatViews(video.views),
-                    benchmark: video.views >= stats.expectedViews
-                        ? "Above expected"
-                        : "Expected: \(formatViews(stats.expectedViews))+",
-                    progress: min(Double(video.views) / Double(max(stats.expectedViews, 1)), 1.0),
-                    isGood: video.views >= stats.expectedViews,
-                    explanation: viewsExplanation(
-                        video.views,
-                        expected: stats.expectedViews,
-                        ctr: stats.ctr
-                    ),
-                    isLast: stats.subscribersGained == 0 && !hasPostingTimeRow
-                )
-
-                if stats.subscribersGained > 0 {
-                    ReviewMetricRow(
-                        name: "Subscribers gained",
-                        value: "+\(stats.subscribersGained)",
-                        benchmark: video.growthPerView >= 1.0
-                            ? "Good conversion"
-                            : "Avg: 1+ per 1K views",
-                        progress: min(video.growthPerView / 3.0, 1.0),
-                        isGood: video.growthPerView >= 1.0,
-                        explanation: subsExplanation(
-                            stats.subscribersGained,
-                            gpv: video.growthPerView
-                        ),
-                        isLast: !hasPostingTimeRow
-                    )
+    // Reach -> Click -> Hook -> Watch -> Subscribe, one dot per step
+    // Shorts skip Click: people swipe to them, they don't tap a thumbnail
+    private func chainStrip(_ checks: [FunnelStep: StepCheck], steps: [FunnelStep]) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(steps.enumerated()), id: \.element) { index, step in
+                chainNode(step, state: checks[step]?.state ?? .unknown)
+                if index < steps.count - 1 {
+                    Rectangle()
+                        .fill(HomeLook.hairline)
+                        .frame(height: 2)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 12)
                 }
-
-                if let line = postingTimeLine {
-                    ReviewMetricRow(
-                        name: "Posting time",
-                        value: publishedDayLabel,
-                        benchmark: "Not your best day",
-                        progress: 0.3,
-                        isGood: false,
-                        explanation: line,
-                        isLast: true
-                    )
-                }
-
-            } else {
-                Text("Analytics loading…")
-                    .font(.system(size: 13))
-                    .foregroundColor(AppTheme.textTertiary)
-                    .frame(maxWidth: .infinity)
-                    .padding(20)
             }
         }
-        .background(AppTheme.cardBackground)
-        .cornerRadius(18)
-        .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(AppTheme.borderSubtle, lineWidth: 0.5)
-        )
     }
 
-    // MARK: - Fix card
-    private var fixCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Your #1 fix")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.red)
-                .kerning(1.0)
-                .textCase(.uppercase)
+    private func chainNode(_ step: FunnelStep, state: StepState) -> some View {
+        VStack(spacing: 6) {
+            ZStack {
+                switch state {
+                case .good:
+                    Circle().fill(ReviewLook.good)
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundColor(.white)
+                case .bottleneck:
+                    Circle().fill(ReviewLook.bad.opacity(0.18)).frame(width: 34, height: 34)
+                    Circle().fill(ReviewLook.bad)
+                    Text("!").font(.system(size: 14, weight: .heavy)).foregroundColor(.white)
+                case .weak:
+                    Circle().stroke(ReviewLook.bad, lineWidth: 2)
+                    Text("!").font(.system(size: 13, weight: .heavy)).foregroundColor(ReviewLook.bad)
+                case .unknown:
+                    Circle().fill(HomeLook.fill)
+                    Rectangle().fill(Color(white: 0.7)).frame(width: 8, height: 2)
+                }
+            }
+            .frame(width: 26, height: 26)
 
-            Text(fix.title)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundColor(AppTheme.textPrimary)
-                .lineSpacing(2)
+            Text(step.name)
+                .font(.system(size: 11, weight: state == .bottleneck ? .bold : .medium))
+                .foregroundColor(state == .bottleneck ? ReviewLook.badText : (state == .unknown ? Color(white: 0.6) : HomeLook.secondary))
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .frame(width: 56)
+    }
 
-            Text(fixInstruction)
-                .font(.system(size: 12))
-                .foregroundColor(AppTheme.textSecondary)
-                .lineSpacing(4)
+    // MARK: - Deep analysis (gold)
+
+    @ViewBuilder
+    private var deepAnalysisButton: some View {
+        if isFreePreview {
+            Button { showPaywall = true } label: { deepAnalysisLabel(locked: true) }
+                .buttonStyle(.plain)
+        } else {
+            NavigationLink {
+                VideoDeepAnalysisView(video: video, allVideos: allVideos)
+            } label: { deepAnalysisLabel(locked: false) }
+                .buttonStyle(.plain)
+        }
+    }
+
+    private func deepAnalysisLabel(locked: Bool) -> some View {
+            HStack(spacing: 14) {
+                Image(systemName: "waveform.path.ecg")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(Color(red: 0.965, green: 0.863, blue: 0.557))
+                    .frame(width: 42, height: 42)
+                    .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(ReviewLook.goldInk))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(locked ? "Unlock deep analysis" : "Deep analysis")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundColor(ReviewLook.goldInk)
+                    Text("Your hook, where people leave, and how it compares")
+                        .font(.system(size: 13))
+                        .foregroundColor(ReviewLook.goldInk.opacity(0.72))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer(minLength: 4)
+
+                Image(systemName: locked ? "lock.fill" : "chevron.right")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(ReviewLook.goldInk)
+            }
+            .padding(18)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous).fill(ReviewLook.gold)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(Color.white.opacity(0.35), lineWidth: 1)
+            )
+            .shadow(color: Color(red: 0.89, green: 0.71, blue: 0.30).opacity(0.28), radius: 17, x: 0, y: 12)
+    }
+
+    // MARK: - Upgrade card (free preview only)
+
+    private var upgradeCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("GET THIS FOR EVERY VIDEO")
+                .font(.system(size: 11, weight: .bold))
+                .kerning(1.2)
+                .foregroundColor(HomeLook.purple)
+            Text("Find what's holding back every video you've posted.")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(HomeLook.ink)
                 .fixedSize(horizontal: false, vertical: true)
+            Text("Premium reviews all your videos, shows where people leave, and gives you one clear fix for each.")
+                .font(.system(size: 15))
+                .foregroundColor(HomeLook.secondary)
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Button { showPaywall = true } label: {
+                Text("See Premium")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(Capsule().fill(HomeLook.ink))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(PremiumWhiteCard())
+    }
 
-            if let example = fixExample {
-                Text(example)
-                    .font(.system(size: 12))
-                    .italic()
-                    .foregroundColor(AppTheme.accent.opacity(0.9))
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(AppTheme.accent.opacity(0.06))
-                    .cornerRadius(10)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
-                    )
+    // MARK: - Views + trend
+
+    private var viewsCard: some View {
+        let smooth = smoothed(dailyViews ?? [])
+        let trend = viewsTrend(smooth)
+        let perDay = recentPerDay
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                sectionLabel("VIEWS")
+                Spacer()
+                if let trend {
+                    HStack(spacing: 3) {
+                        Image(systemName: trend.icon).font(.system(size: 11, weight: .bold))
+                        Text(trend.text).font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundColor(trend.color)
+                }
+            }
+
+            Text(video.views.formatted())
+                .font(.system(size: 38, weight: .bold))
+                .kerning(-1)
+                .foregroundColor(HomeLook.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+
+            Text(perDay > 0 ? "All time · about \(perDay.formatted()) a day lately" : "All time")
+                .font(.system(size: 13))
+                .foregroundColor(HomeLook.secondary)
+
+            if smooth.count >= 7, smooth.contains(where: { $0 > 0 }) {
+                ReviewTrendChart(values: smooth, color: trend?.isDown == true ? ReviewLook.bad : ReviewLook.good)
+                    .frame(height: 84)
+                    .padding(.top, 8)
+                HStack {
+                    Text(windowLabel)
+                    Spacer()
+                    Text("7-day average")
+                    Spacer()
+                    Text("Today")
+                }
+                .font(.system(size: 11))
+                .foregroundColor(Color(white: 0.6))
+            } else if dailyViews == nil {
+                HStack { Spacer(); ProgressView(); Spacer() }
+                    .frame(height: 84)
             }
         }
-        .padding(16)
-        .background(Color.red.opacity(0.05))
-        .cornerRadius(18)
-        .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(Color.red.opacity(0.15), lineWidth: 0.5)
-        )
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(PremiumWhiteCard())
     }
 
-    private var fixInstruction: String {
-        switch fix {
-        case .thumbnail:
-            return "Your title describes what you did, not what the viewer gets. Add a specific outcome, number, or timeframe to make it impossible to scroll past."
-        case .hook:
-            return "You're explaining what the video is about instead of starting inside the story. Drop viewers into the most interesting moment first — context can come later."
-        case .retention:
-            return "Viewers are losing interest mid-video. Add a re-hook every 3–4 minutes — a single line that creates new curiosity and pulls them forward."
-        case .discovery:
-            return "Your title and description aren't helping YouTube understand who to show this to. Use specific, searchable language that matches what your ideal viewer actually types."
-        case .none:
-            return "No immediate action needed."
+    private var windowLabel: String {
+        let days = min(video.ageInDays, 90)
+        return days >= 90 ? "90 days ago" : "Posted"
+    }
+
+    /// 7-day moving average, so the line shows the trend, not daily noise
+    private func smoothed(_ values: [Double]) -> [Double] {
+        guard values.count >= 7 else { return values }
+        return values.indices.map { i in
+            let window = values[max(0, i - 6)...i]
+            return window.reduce(0, +) / Double(window.count)
         }
     }
 
-    private var fixExample: String? {
-        switch fix {
-        case .thumbnail:
-            return "Instead of: \"How I built a SaaS\" → Try: \"I built a SaaS in 7 days with $0 — here's what happened\""
-        case .hook:
-            return "Instead of: \"Hey everyone, today we're going to...\" → Try: \"Day 7. Zero dollars. Here's the moment it made its first sale.\""
-        case .retention:
-            return "At the 3-minute mark, add: \"But here's where it gets interesting — this one thing changed everything...\""
-        case .discovery:
-            return "Add to your description: the specific problem you solve, who it's for, and what they'll learn — in the first two lines."
-        case .none:
-            return nil
+    private var recentPerDay: Int {
+        guard let days = dailyViews, !days.isEmpty else { return 0 }
+        let last = days.suffix(7)
+        return Int((last.reduce(0, +) / Double(last.count)).rounded())
+    }
+
+    private func viewsTrend(_ values: [Double]) -> (text: String, icon: String, color: Color, isDown: Bool)? {
+        guard values.count >= 14 else { return nil }
+        let k = max(values.count / 3, 1)
+        let first = values.prefix(k).reduce(0, +) / Double(k)
+        let last = values.suffix(k).reduce(0, +) / Double(k)
+        guard first > 0 || last > 0 else { return nil }
+        let change = first > 0 ? (last - first) / first : 1
+        if change >= 0.10  { return ("Still growing", "arrow.up", ReviewLook.goodText, false) }
+        if change <= -0.10 { return ("Slowing down", "arrow.down", ReviewLook.badText, true) }
+        return ("Steady", "arrow.right", HomeLook.secondary, false)
+    }
+
+    // MARK: - Compared to your usual
+
+    private struct Comparison: Identifiable {
+        let id = UUID()
+        let name: String
+        let you: Double
+        let usual: Double
+        let format: (Double) -> String
+    }
+
+    /// The middle value across your other videos
+    private func usual(_ value: (Video) -> Double?) -> Double? {
+        // Only videos with 100+ views: tiny videos swing too much to be "usual"
+        let values = allVideos
+            .filter { $0.videoId != video.videoId && $0.analytics != nil && $0.views >= 100 && $0.isSameFormat(as: video) }
+            .compactMap(value)
+            .filter { $0 > 0 }
+            .sorted()
+        guard values.count >= 3 else { return nil }
+        return values[values.count / 2]
+    }
+
+    private var comparisons: [Comparison] {
+        guard let s = stats else { return [] }
+        var rows: [Comparison] = []
+
+        if let you = insights?.hookRetention, let base = hookBaseline, base.sampleCount >= 3 {
+            let second = insights?.hookSecond ?? 30
+            rows.append(Comparison(name: "Still watching at \(second / 60):\(String(format: "%02d", second % 60))",
+                                   you: you, usual: base.median,
+                                   format: { "\(Int(($0 * 100).rounded()))%" }))
+        }
+
+        if s.retention > 0, let u = usual({ $0.analytics?.retention }) {
+            rows.append(Comparison(name: "Watched", you: s.retention, usual: u,
+                                   format: { "\(Int(($0 * 100).rounded()))%" }))
+        }
+        if video.growthPerView > 0, let u = usual({ $0.growthPerView }) {
+            rows.append(Comparison(name: "Subs per 1K views", you: video.growthPerView, usual: u,
+                                   format: { String(format: "%.1f", $0) }))
+        }
+        if !video.isShort, s.hasCTR, let u = usual({ ($0.analytics?.hasCTR ?? false) ? $0.analytics?.ctr : nil }) {
+            rows.append(Comparison(name: "Thumbnail CTR", you: s.ctr, usual: u,
+                                   format: { String(format: "%.1f%%", $0 * 100) }))
+        }
+        if video.ageInDays >= 7, video.views > 0, let u = usual({ Double($0.views) }) {
+            rows.append(Comparison(name: "Views", you: Double(video.views), usual: u,
+                                   format: { Self.shortNumber($0) }))
+        }
+        return rows
+    }
+
+    @ViewBuilder
+    private var compareCard: some View {
+        let rows = comparisons
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                sectionLabel("COMPARED TO YOUR USUAL")
+                    .padding(.bottom, 2)
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                    compareRow(row)
+                    if index < rows.count - 1 {
+                        Rectangle().fill(HomeLook.hairline).frame(height: 1)
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .modifier(PremiumWhiteCard())
+        }
+    }
+
+    private func compareRow(_ row: Comparison) -> some View {
+        let ratio = row.usual > 0 ? row.you / row.usual : 1
+        let better = ratio >= 1.15
+        let worse = ratio <= 0.87
+        let tag: String = {
+            if ratio >= 1.8 { return "About \(Int(ratio.rounded()))x better" }
+            if better { return "Better" }
+            if worse { return "Below usual" }
+            return "About the same"
+        }()
+        let tagColor = better ? ReviewLook.goodText : (worse ? ReviewLook.badText : HomeLook.secondary)
+        let barColor = better ? ReviewLook.good : (worse ? ReviewLook.bad : HomeLook.ink.opacity(0.55))
+        let top = max(row.you, row.usual) * 1.1
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(row.name)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(HomeLook.ink)
+                Spacer()
+                Text(tag)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(tagColor)
+            }
+            compareBar(label: "This video", value: row.format(row.you), fraction: row.you / top, color: barColor, bold: true)
+            compareBar(label: "Your usual", value: row.format(row.usual), fraction: row.usual / top, color: ReviewLook.usualBar, bold: false)
+        }
+        .padding(.vertical, 14)
+    }
+
+    private func compareBar(label: String, value: String, fraction: Double, color: Color, bold: Bool) -> some View {
+        HStack(spacing: 10) {
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundColor(HomeLook.secondary)
+                .frame(width: 72, alignment: .leading)
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(HomeLook.fill)
+                    Capsule().fill(color).frame(width: g.size.width * CGFloat(min(max(fraction, 0.02), 1)))
+                }
+            }
+            .frame(height: 8)
+            Text(value)
+                .font(.system(size: 13, weight: bold ? .bold : .medium))
+                .foregroundColor(bold ? HomeLook.ink : HomeLook.secondary)
+                .frame(width: 52, alignment: .trailing)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
     }
 
     // MARK: - What's working
+
     @ViewBuilder
-    private var workingWellCard: some View {
+    private var workingCard: some View {
         let wins = workingWell
         if !wins.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 6, height: 6)
-                    Text("What's working")
-                        .font(.system(size: 16, weight: .semibold, design: .serif))
-                        .foregroundColor(.green)
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(wins, id: \.self) { win in
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(.green)
-                                .padding(.top, 3)
-                            Text(win)
-                                .font(.system(size: 14))
-                                .foregroundColor(AppTheme.textPrimary)
-                                .lineSpacing(4)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+            VStack(alignment: .leading, spacing: 12) {
+                sectionLabel("WHAT'S WORKING")
+                ForEach(wins, id: \.self) { win in
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 17))
+                            .foregroundColor(ReviewLook.good)
+                        Text(win)
+                            .font(.system(size: 15))
+                            .foregroundColor(HomeLook.ink)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
-            .padding(16)
+            .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.green.opacity(0.05))
-            .cornerRadius(18)
-            .overlay(
-                RoundedRectangle(cornerRadius: 18)
-                    .stroke(Color.green.opacity(0.15), lineWidth: 0.5)
-            )
+            .modifier(PremiumWhiteCard())
         }
     }
 
     private var workingWell: [String] {
-        guard let stats = video.analytics else { return [] }
+        guard let s = stats else { return [] }
         var wins: [String] = []
-
-        if stats.retention >= 0.40 {
-            wins.append("\(Int(stats.retention * 100))% retention — viewers who clicked stayed for over half the video. Your content delivers on its promise.")
+        if s.retention >= (video.isShort ? 0.90 : 0.40) {
+            wins.append("People watch \(Int((s.retention * 100).rounded()))% of it. That's great.")
         }
-        if stats.ctr >= 0.07 {
-            wins.append("\(String(format: "%.1f", stats.ctr * 100))% CTR — your thumbnail and title are working. This is above the 7% benchmark.")
+        if !video.isShort && s.hasCTR && s.ctr >= 0.06 {
+            wins.append("Your thumbnail gets clicks. Keep this style.")
         }
-        if video.views >= stats.expectedViews {
-            wins.append("Views are above expectations for your channel — YouTube is distributing this well.")
+        if video.ageInDays >= 30, let trend = viewsTrend(smoothed(dailyViews ?? [])), !trend.isDown, recentPerDay > 0 {
+            wins.append("It still gets new views every day.")
         }
-        if stats.averageViewDuration > 60 {
-            wins.append("Average watch duration of \(stats.averageViewDuration)s — viewers are genuinely engaged with the content.")
+        if video.ageInDays >= 7, let ratio = video.viewsVsUsual, ratio >= 1.5 {
+            wins.append(String(format: "It got %.1fx your usual views.", ratio))
         }
         if video.growthPerView >= 2.0 {
-            wins.append("This video is converting \(String(format: "%.1f", video.growthPerView)) subscribers per 1,000 views — well above the channel average. It's a growth machine.")
+            wins.append("It turns viewers into subscribers.")
         }
-        if fix == .none {
-            wins.append("This format is working. Study the hook, title structure, and opening — then repeat it on your next upload.")
+        if wins.isEmpty && insightsLoaded && diagnosis.bottleneck == nil {
+            wins.append("Nothing is holding it back. Try this format again.")
         }
-
-        return wins
+        return Array(wins.prefix(2))
     }
 
-    // MARK: - Metric explanations
-    private func ctrExplanation(_ ctr: Double) -> String {
-        let per100 = Int(ctr * 100)
-        if ctr >= 0.07 {
-            return "About \(per100) in every 100 people who saw your thumbnail clicked. That's above benchmark — your packaging is working."
-        } else if ctr >= 0.04 {
-            return "About \(per100) in every 100 people clicked. There's room to improve — a stronger title or thumbnail could meaningfully increase your reach."
-        } else {
-            return "Only \(per100) in every 100 people who saw your thumbnail clicked. This is the single biggest thing holding this video back."
-        }
+    // MARK: - Small pieces
+
+    private var footnote: some View {
+        Text(video.isShort
+             ? "\"Your usual\" is the middle of your other Shorts."
+             : "\"Your usual\" is the middle of your long videos. CTR is from recent days, because that's what YouTube shares.")
+            .font(.system(size: 12))
+            .foregroundColor(.white.opacity(0.42))
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 20)
     }
 
-    private func retentionExplanation(_ retention: Double) -> String {
-        let pct = Int(retention * 100)
-        if retention >= 0.45 {
-            return "Viewers watched \(pct)% of the video on average — that's genuinely strong. Your content is keeping people engaged."
-        } else if retention >= 0.30 {
-            return "Viewers watched \(pct)% on average. Solid, but there's likely a drop-off point mid-video worth investigating in the deep analysis."
-        } else {
-            return "Viewers only watched \(pct)% on average. Most are leaving early — your hook or early content needs work."
-        }
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .semibold))
+            .kerning(1.1)
+            .foregroundColor(HomeLook.secondary)
     }
 
-    private func viewsExplanation(_ views: Int, expected: Int, ctr: Double) -> String {
-        if views >= expected {
-            return "Views are above what we'd expect for a video with this CTR and retention. YouTube is distributing it well."
-        } else if ctr < 0.05 {
-            return "Views are below expectations — and the low CTR is the reason. More clicks = more views. Fix the thumbnail and this number follows."
-        } else {
-            return "Views are below expectations despite decent CTR. This suggests a discovery issue — check your title tags and description keywords."
-        }
-    }
-
-    private func subsExplanation(_ subs: Int, gpv: Double) -> String {
-        if gpv >= 3.0 {
-            return "This video is converting \(String(format: "%.1f", gpv)) subscribers per 1,000 views — that's exceptional. It's actively building your channel, not just getting views."
-        } else if gpv >= 1.0 {
-            return "Decent sub conversion at \(String(format: "%.1f", gpv)) per 1,000 views. Videos that convert above 2.0 are your strongest channel-builders."
-        } else {
-            return "Low sub conversion — viewers are watching but not subscribing. This could mean the content doesn't make a strong case for why they should come back."
-        }
-    }
-
-    private func formatViews(_ views: Int) -> String {
-        if views >= 1_000_000 { return String(format: "%.1fM", Double(views) / 1_000_000) }
-        if views >= 1_000     { return String(format: "%.0fK", Double(views) / 1_000) }
-        return "\(views)"
+    private static func shortNumber(_ value: Double) -> String {
+        if value >= 1_000_000 { return String(format: "%.1fM", value / 1_000_000) }
+        if value >= 10_000    { return String(format: "%.0fK", value / 1_000) }
+        if value >= 1_000     { return String(format: "%.1fK", value / 1_000) }
+        return "\(Int(value))"
     }
 }
 
-// MARK: - ReviewMetricRow
+// MARK: - White card with a soft shadow
+
+struct PremiumWhiteCard: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color.white))
+            .shadow(color: .black.opacity(0.35), radius: 16, x: 0, y: 12)
+    }
+}
+
+// MARK: - Trend line (line + soft fade, no axes)
+
+private struct ReviewTrendChart: View {
+    let values: [Double]
+    let color: Color
+
+    var body: some View {
+        GeometryReader { g in
+            let w = g.size.width, h = g.size.height
+            let minV = values.min() ?? 0
+            let maxV = values.max() ?? 1
+            let range = max(maxV - minV, 0.0001)
+            let inset: CGFloat = 6
+            let step = (w - inset * 2) / CGFloat(max(values.count - 1, 1))
+            let points = values.enumerated().map { i, v in
+                CGPoint(x: inset + CGFloat(i) * step,
+                        y: inset + (h - inset * 2) * (1 - CGFloat((v - minV) / range)))
+            }
+
+            ZStack {
+                Path { p in
+                    guard let first = points.first, let last = points.last else { return }
+                    p.move(to: CGPoint(x: first.x, y: h))
+                    points.forEach { p.addLine(to: $0) }
+                    p.addLine(to: CGPoint(x: last.x, y: h))
+                    p.closeSubpath()
+                }
+                .fill(LinearGradient(colors: [color.opacity(0.22), color.opacity(0)], startPoint: .top, endPoint: .bottom))
+
+                Path { p in
+                    guard let first = points.first else { return }
+                    p.move(to: first)
+                    points.dropFirst().forEach { p.addLine(to: $0) }
+                }
+                .stroke(color, style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+
+                if let last = points.last {
+                    Circle()
+                        .fill(color)
+                        .frame(width: 9, height: 9)
+                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                        .position(last)
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Kept for other screens that may use them
+
 struct ReviewMetricRow: View {
     let name: String
     let value: String
@@ -629,47 +870,35 @@ struct ReviewMetricRow: View {
     let isLast: Bool
 
     private var barColor: Color {
-        isGood ? .green : (progress > 0.6 ? .yellow : .red)
+        isGood ? HomeLook.purple : HomeLook.orange
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
-                // Metric name — larger, primary color, readable in both modes
                 Text(name.uppercased())
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(AppTheme.textPrimary)
                     .kerning(0.6)
-
                 Spacer()
-
                 VStack(alignment: .trailing, spacing: 2) {
-                    // Stat number — larger and bolder so it reads as the hero
                     Text(value)
-                        .font(.system(size: 28, weight: .semibold, design: .serif))
+                        .font(.system(size: 28, weight: .semibold))
                         .foregroundColor(AppTheme.textPrimary)
                     Text(benchmark)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(isGood ? .green : .red)
+                        .foregroundColor(isGood ? HomeLook.purpleLight : HomeLook.orange)
                 }
             }
-
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Color(.systemFill))
-                        .frame(height: 4)
+                    RoundedRectangle(cornerRadius: 3).fill(Color(.systemFill)).frame(height: 4)
                     RoundedRectangle(cornerRadius: 3)
                         .fill(barColor)
-                        .frame(
-                            width: geo.size.width * min(max(progress, 0), 1),
-                            height: 4
-                        )
-                        .animation(.easeOut(duration: 0.8), value: progress)
+                        .frame(width: geo.size.width * min(max(progress, 0), 1), height: 4)
                 }
             }
             .frame(height: 4)
-
             Text(explanation)
                 .font(.system(size: 13))
                 .foregroundColor(AppTheme.textPrimary)
@@ -679,13 +908,11 @@ struct ReviewMetricRow: View {
         .padding(16)
 
         if !isLast {
-            Divider()
-                .padding(.horizontal, 16)
+            Divider().padding(.horizontal, 16)
         }
     }
 }
 
-// MARK: - ScorecardCell
 struct ScorecardCell: View {
     let value: String
     let label: String
@@ -694,7 +921,7 @@ struct ScorecardCell: View {
     var body: some View {
         VStack(spacing: 3) {
             Text(value)
-                .font(.system(size: 16, weight: .medium, design: .serif))
+                .font(.system(size: 16, weight: .medium))
                 .foregroundColor(valueColor)
                 .lineLimit(1)
             Text(label)

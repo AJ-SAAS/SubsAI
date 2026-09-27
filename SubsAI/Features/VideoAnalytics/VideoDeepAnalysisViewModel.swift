@@ -1,99 +1,63 @@
 // Features/VideoAnalytics/VideoDeepAnalysisViewModel.swift
+// Loads REAL data only. If YouTube has no retention data yet, the page says so
+// (no more made-up curves).
 import Foundation
 
 @MainActor
 final class VideoDeepAnalysisViewModel: ObservableObject {
-    @Published var analysis: VideoDeepAnalysis?
-    @Published var isLoading = false
-    @Published var errorMessage: String?
+    @Published var isLoading = true
+    /// "Your usual" loads after this video's own data, so the page never waits on it
+    @Published var isLoadingUsual = true
+    /// This video: length + retention curve
+    @Published var insights: VideoInsights?
+    /// Your usual, from up to 8 recent videos
+    @Published var profile: YouTubeService.RetentionProfile?
 
     let video: Video
+
+    /// Moments we check in the Hook tab (only the ones that fit this video are shown)
+    /// (1-3 seconds only fit Shorts: on long videos the curve isn't that detailed)
+    static let checkpointCandidates = [1, 2, 3, 5, 10, 15, 30, 60, 120, 180]
 
     init(video: Video) {
         self.video = video
     }
 
-    func load() async {
+    var hasCurve: Bool { (insights?.retentionCurve.count ?? 0) >= 20 && insights?.durationSeconds != nil }
+
+    /// The moments that make sense for this video's length and data detail.
+    /// YouTube's curve has about 100 points, so on long videos early seconds can't be read.
+    var checkpoints: [Int] {
+        guard let d = insights?.durationSeconds, d > 0 else { return [] }
+        let step = Double(d) / 100
+        return Self.checkpointCandidates
+            .filter { Double($0) >= step * 1.5 && Double($0) <= Double(d) * 0.5 }
+            .prefix(5)
+            .map { $0 }
+    }
+
+    func load(allVideos: [Video]) async {
+        guard insights == nil else { return }
         isLoading = true
-        errorMessage = nil
 
-        do {
-            let token = try await AuthManager.shared.getValidToken()
-            let curve = try await fetchRetentionCurve(videoId: video.videoId, accessToken: token)
-            let channelAvg = simulatedChannelAvg()
+        // Shorts compare to Shorts, long videos to long videos
+        let recent = allVideos
+            .filter { $0.videoId != video.videoId && $0.isSameFormat(as: video) }
+            .sorted { $0.publishedAt > $1.publishedAt }
 
-            self.analysis = VideoDeepAnalysis(
-                video: video,
-                retentionCurve: curve,
-                channelAvgCurve: channelAvg
-            )
-        } catch {
-            self.analysis = VideoDeepAnalysis(
-                video: video,
-                retentionCurve: simulatedCurve(),
-                channelAvgCurve: simulatedChannelAvg()
-            )
-            self.errorMessage = "Using estimated data — analytics may not be available yet for this video."
-        }
-
+        // 1. This video first: the page shows as soon as it's here
+        let started = Date()
+        var loaded = await YouTubeService.shared.retentionInsights(for: video.videoId, publishedAt: video.publishedAt)
+        loaded.isShort = video.isShort
+        insights = loaded
         isLoading = false
-    }
+        print("⏱ Deep analysis: this video's curve in \(String(format: "%.1f", Date().timeIntervalSince(started)))s, \(insights?.retentionCurve.count ?? 0) points")
 
-    // MARK: - Retention API
-    private func fetchRetentionCurve(videoId: String, accessToken: String) async throws -> [RetentionDataPoint] {
-        var components = URLComponents(string: "https://youtubeanalytics.googleapis.com/v2/reports")!
-        components.queryItems = [
-            .init(name: "ids",        value: "channel==MINE"),
-            .init(name: "metrics",    value: "audienceWatchRatio"),
-            .init(name: "filters",    value: "video==\(videoId)"),
-            .init(name: "dimensions", value: "elapsedVideoTimeRatio"),
-            .init(name: "startDate",  value: "2020-01-01"),
-            .init(name: "endDate",    value: Date().youtubeAnalyticsDateString())
-        ]
-
-        let request = URLRequest(url: components.url!, bearerToken: accessToken)
-        let (data, _) = try await URLSession.shared.data(for: request)
-
-        // ✅ Use AnalyticsValue to handle mixed number/string rows
-        struct Response: Codable {
-            let rows: [[AnalyticsValue]]?
-        }
-
-        let response = try JSONDecoder().decode(Response.self, from: data)
-
-        guard let rows = response.rows, !rows.isEmpty else {
-            throw URLError(.zeroByteResource)
-        }
-
-        return rows.compactMap { row in
-            guard row.count >= 2 else { return nil }
-            return RetentionDataPoint(
-                elapsedTimeRatio: row[0].doubleValue,
-                audienceWatchRatio: row[1].doubleValue
-            )
-        }
-    }
-
-    // MARK: - Fallback curves
-    private func simulatedCurve() -> [RetentionDataPoint] {
-        [
-            (0.00, 1.00), (0.05, 0.88), (0.10, 0.82), (0.15, 0.74),
-            (0.20, 0.68), (0.25, 0.65), (0.30, 0.62), (0.35, 0.60),
-            (0.40, 0.57), (0.45, 0.53), (0.50, 0.51), (0.55, 0.49),
-            (0.60, 0.46), (0.65, 0.44), (0.70, 0.42), (0.75, 0.40),
-            (0.80, 0.38), (0.85, 0.37), (0.90, 0.36), (0.95, 0.35),
-            (1.00, 0.34)
-        ].map { RetentionDataPoint(elapsedTimeRatio: $0.0, audienceWatchRatio: $0.1) }
-    }
-
-    private func simulatedChannelAvg() -> [RetentionDataPoint] {
-        [
-            (0.00, 1.00), (0.05, 0.82), (0.10, 0.74), (0.15, 0.68),
-            (0.20, 0.63), (0.25, 0.59), (0.30, 0.56), (0.35, 0.54),
-            (0.40, 0.51), (0.45, 0.48), (0.50, 0.46), (0.55, 0.44),
-            (0.60, 0.42), (0.65, 0.40), (0.70, 0.38), (0.75, 0.37),
-            (0.80, 0.36), (0.85, 0.35), (0.90, 0.34), (0.95, 0.33),
-            (1.00, 0.32)
-        ].map { RetentionDataPoint(elapsedTimeRatio: $0.0, audienceWatchRatio: $0.1) }
+        // 2. Then your usual (compare lines and ticks appear when ready)
+        profile = await YouTubeService.shared.fetchRetentionProfile(
+            recentVideos: recent,
+            checkpoints: Self.checkpointCandidates
+        )
+        isLoadingUsual = false
     }
 }

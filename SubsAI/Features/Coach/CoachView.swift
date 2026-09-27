@@ -16,6 +16,8 @@ struct CoachView: View {
     @State private var authError: AuthError?
     @State private var sortOrder: VideoSortOrder = .bestPerforming
     @State private var showSortSheet = false
+    @State private var showPaywall = false
+    @ObservedObject private var premium = PremiumStatus.shared
 
     init(vm: CoachViewModel) {
         self.vm = vm
@@ -24,11 +26,11 @@ struct CoachView: View {
     private var sortedVideos: [Video] {
         switch sortOrder {
         case .priority:        return vm.videosByPriority
-        case .bestPerforming:  return vm.videos.sorted { $0.healthScore > $1.healthScore }
-        case .leastPerforming: return vm.videos.sorted { $0.healthScore < $1.healthScore }
-        case .latest:          return vm.videos.sorted { $0.publishedAt > $1.publishedAt }
-        case .oldest:          return vm.videos.sorted { $0.publishedAt < $1.publishedAt }
-        case .mostViews:       return vm.videos.sorted { $0.views > $1.views }
+        case .bestPerforming:  return vm.shownVideos.sorted { $0.healthScore > $1.healthScore }
+        case .leastPerforming: return vm.shownVideos.sorted { $0.healthScore < $1.healthScore }
+        case .latest:          return vm.shownVideos.sorted { $0.publishedAt > $1.publishedAt }
+        case .oldest:          return vm.shownVideos.sorted { $0.publishedAt < $1.publishedAt }
+        case .mostViews:       return vm.shownVideos.sorted { $0.views > $1.views }
         }
     }
 
@@ -70,9 +72,14 @@ struct CoachView: View {
                             .foregroundColor(AppTheme.textPrimary)
                             .padding(.top, 8)
 
+                        // Only shows when the channel makes both Shorts and long videos
+                        if vm.hasBothFormats {
+                            FormatSwitch(selection: $vm.formatFilter)
+                        }
+
                         if !vm.videos.isEmpty {
                             NextUploadBriefingCard(
-                                videos: vm.videos,
+                                videos: vm.shownVideos,
                                 report: vm.intelligenceReport,
                                 postingTimeInsight: vm.postingTimeInsight,
                                 vm: vm
@@ -84,7 +91,7 @@ struct CoachView: View {
                         if !vm.videos.isEmpty {
 
                             HStack {
-                                Text("Your videos")
+                                Text(vm.hasBothFormats && vm.formatFilter == .shorts ? "Your Shorts" : "Your videos")
                                     .font(.system(size: 17, weight: .semibold, design: .serif))
                                     .foregroundColor(AppTheme.textPrimary)
 
@@ -109,21 +116,42 @@ struct CoachView: View {
                             .padding(.top, 4)
 
                             ForEach(sortedVideos) { video in
-                                NavigationLink {
-                                    CoachReviewView(
-                                        video: video,
-                                        allVideos: vm.videos,
-                                        postingTimeInsight: vm.postingTimeInsight,
-                                        vm: vm
-                                    )
-                                } label: {
-                                    CoachVideoCard(
-                                        video: video,
-                                        replicationScore: vm.intelligenceReport?
-                                            .replicationScore(for: video)
-                                    )
+                                if premium.isPremium {
+                                    NavigationLink {
+                                        CoachReviewView(
+                                            video: video,
+                                            allVideos: vm.videos,
+                                            postingTimeInsight: vm.postingTimeInsight,
+                                            vm: vm
+                                        )
+                                    } label: {
+                                        CoachVideoCard(
+                                            video: video,
+                                            replicationScore: vm.intelligenceReport?
+                                                .replicationScore(for: video)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                } else {
+                                    // Free users: video reviews are Premium (their latest video is free on Home)
+                                    Button { showPaywall = true } label: {
+                                        CoachVideoCard(
+                                            video: video,
+                                            replicationScore: vm.intelligenceReport?
+                                                .replicationScore(for: video)
+                                        )
+                                        // Lock sits on the thumbnail, so it doesn't cover the score
+                                        .overlay(alignment: .topLeading) {
+                                            Image(systemName: "lock.fill")
+                                                .font(.system(size: 10, weight: .bold))
+                                                .foregroundColor(.white)
+                                                .padding(6)
+                                                .background(Circle().fill(Color.black.opacity(0.6)))
+                                                .padding(16)
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
                             }
 
                         } else if vm.isLoading {
@@ -151,6 +179,12 @@ struct CoachView: View {
         }
         .onAppear {
             Task { await loadSafely() }
+            Task { await premium.refresh() }
+        }
+        .sheet(isPresented: $showPaywall, onDismiss: {
+            Task { await premium.refresh() }
+        }) {
+            PaywallContainer()
         }
         .onReceive(NotificationCenter.default.publisher(for: .signInGoogleCompleted)) { _ in
             Task { await loadSafely() }
@@ -222,14 +256,16 @@ struct NextUploadBriefingCard: View {
     var vm: CoachViewModel? = nil
 
     private var channelAvgCTR: Double {
-        let ctrs = videos.compactMap { $0.analytics?.ctr }
+        // Only videos where YouTube gave us a real CTR
+        let ctrs = videos.compactMap { $0.analytics }.filter { $0.hasCTR }.map { $0.ctr }
         guard !ctrs.isEmpty else { return 0 }
         return ctrs.reduce(0, +) / Double(ctrs.count)
     }
 
+    // Best performer = most views (a ratio like subs per 1K can be won by a 40-view video)
     private var bestVideo: Video? {
-        videos.filter { $0.growthPerView > 0 }
-              .max(by: { $0.growthPerView < $1.growthPerView })
+        videos.filter { $0.views > 0 }
+              .max(by: { $0.views < $1.views })
     }
 
     var body: some View {
@@ -254,8 +290,8 @@ struct NextUploadBriefingCard: View {
                 if channelAvgCTR > 0 {
                     let ctrText = "Avg CTR \(String(format: "%.1f", channelAvgCTR * 100))%"
                     let fullText = channelAvgCTR >= 0.05
-                        ? "\(ctrText) — strong. Keep this thumbnail direction."
-                        : "\(ctrText) — needs work. Rethink thumbnail before filming."
+                        ? "\(ctrText). Strong. Keep this thumbnail style."
+                        : "\(ctrText). Needs work. Plan the thumbnail before you film."
 
                     BriefingLine(icon: "cursorarrow.click", text: fullText, boldPart: ctrText)
                 }
@@ -263,21 +299,22 @@ struct NextUploadBriefingCard: View {
                 // Best Video Line with bold "Best Performer"
                 if let best = bestVideo {
                     let boldTitle = "Best Performer"
-                    let fullText = "\(boldTitle): \"\(best.title.prefix(45))...\" — replicate this format."
+                    let fullText = "\(boldTitle): \"\(best.title.prefix(45))...\" Make more like this."
 
                     BriefingLine(icon: "arrow.triangle.2.circlepath", text: fullText, boldPart: boldTitle)
                 }
 
                 // Posting Insight with bold day
                 if let insight = postingTimeInsight, insight.isReliable {
-                    let boldDay = "Monday is your best posting day"
-                    let fullText = "\(boldDay) — lean into this on your next upload."
+                    // Was hard-coded to "Monday" before
+                    let boldDay = "\(insight.bestDay) is your best posting day"
+                    let fullText = "\(boldDay). Post your next video then."
 
                     BriefingLine(icon: "clock", text: fullText, boldPart: boldDay)
                 } else if let pattern = report?.winningPatterns.first {
                     BriefingLine(
                         icon: "chart.line.uptrend.xyaxis",
-                        text: "\(pattern.title) — lean into this pattern next."
+                        text: "\(pattern.title). Try this again next."
                     )
                 }
             }
@@ -285,7 +322,7 @@ struct NextUploadBriefingCard: View {
             // Intelligence Link - Changed to Yellow for better visibility
             if let vm = vm {
                 NavigationLink {
-                    IntelligenceView(vm: vm)
+                    IntelligenceView(vm: vm, showsBack: true)
                 } label: {
                     HStack(spacing: 4) {
                         Text("See all patterns in Intelligence")
@@ -362,10 +399,10 @@ struct ImprovedDiagnosisCard: View {
         else if gqs.retentionStrength >= 0.25 { chips.append(("Retention low", .yellow)) }
         else { chips.append(("Retention ✗", .red)) }
 
-        let avgCTR = report.channelAvgCTR
+        let avgCTR = report.channelAvgCTR   // 0 = not known yet
         if avgCTR >= 0.06 { chips.append(("CTR ✓", .green)) }
         else if avgCTR >= 0.04 { chips.append(("CTR low", .yellow)) }
-        else { chips.append(("CTR needs work", .red)) }
+        else if avgCTR > 0 { chips.append(("CTR needs work", .red)) }
 
         if gqs.composite >= 7.0 { chips.append(("Growth strong", .green)) }
         else if gqs.composite >= 5.0 { chips.append(("Growth moderate", .yellow)) }
@@ -448,5 +485,33 @@ struct DiagnosisCard: View {
 
     var body: some View {
         ImprovedDiagnosisCard(diagnosis: diagnosis, report: nil)
+    }
+}
+
+// MARK: - Shorts vs long videos switch
+
+/// "Long videos | Shorts". Shown on Coach and Intelligence only when a channel makes both.
+struct FormatSwitch: View {
+    @Binding var selection: CoachViewModel.FormatFilter
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(CoachViewModel.FormatFilter.allCases, id: \.self) { option in
+                let isOn = selection == option
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { selection = option }
+                } label: {
+                    Text(option.label)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(isOn ? .black : .white.opacity(0.7))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 36)
+                        .background(Capsule().fill(isOn ? Color.white : Color.clear))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(Capsule().fill(Color.white.opacity(0.1)))
     }
 }

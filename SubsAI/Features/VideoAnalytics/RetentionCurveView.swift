@@ -1,259 +1,296 @@
 // Features/VideoAnalytics/RetentionCurveView.swift
+// Retention tab: the whole video. Real curve vs your real usual, the real moments
+// people left, and the moments people went back to rewatch.
 import SwiftUI
 
 struct RetentionCurveView: View {
-    let analysis: VideoDeepAnalysis
+    @ObservedObject var vm: VideoDeepAnalysisViewModel
+
+    private var insights: VideoInsights? { vm.insights }
+    private var drops: [(startSecond: Int, endSecond: Int, lost: Double)] { insights?.drops(limit: 3) ?? [] }
+    private var rewatches: [(second: Int, rise: Double)] { insights?.rewatchSpots(limit: 2) ?? [] }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
-
-                // MARK: - Curve chart
-                sectionLabel("Viewer retention · full video")
-                    .padding(.bottom, 2)
-
-                RetentionChartView(
-                    curve: analysis.retentionCurve,
-                    channelAvg: analysis.channelAvgCurve,
-                    dropOffs: analysis.dropOffPoints
-                )
-                .frame(height: 220)
-                .padding(16)
-                .background(AppTheme.cardBackground)
-                .cornerRadius(16)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(AppTheme.borderSubtle, lineWidth: 0.5)
-                )
-
-                // Drop-off pills
-                dropOffPills
-
-                // MARK: - Drop-off diagnosis
-                sectionLabel("Drop-off diagnosis")
-                    .padding(.bottom, 2)
-
-                ForEach(Array(analysis.dropOffPoints.enumerated()), id: \.element.id) { index, drop in
-                    InsightBlock(
-                        title: dropOffTitle(drop, index: index),
-                        content: dropOffBody(drop, index: index),
-                        accentColor: dropOffColor(drop)
-                    )
-                }
-
-                // MARK: - Pattern insight
-                sectionLabel("What works on your channel")
-                    .padding(.bottom, 2)
-
-                InsightBlock(
-                    title: "What keeps people watching",
-                    content: "Your 3 best-retaining videos all share one thing: a conflict introduced before minute 1. \"Here's what almost went wrong\" keeps people watching more than any other pattern in your library.",
-                    accentColor: .green
-                )
-
-                Spacer(minLength: 40)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-        }
-    }
-
-    // MARK: - Drop-off pills
-    private var dropOffPills: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(analysis.dropOffPoints) { drop in
-                    Text(dropPillLabel(drop))
-                        .font(.system(size: 13, weight: .medium)) // was 12
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(dropOffColor(drop).opacity(0.12))
-                        .foregroundColor(dropOffColor(drop))
-                        .cornerRadius(20)
-                }
-
-                Text("Strong 0–2 min")
-                    .font(.system(size: 13, weight: .medium)) // was 12
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.green.opacity(0.12))
-                    .foregroundColor(.green)
-                    .cornerRadius(20)
+        if !vm.hasCurve {
+            DeepNoDataCard()
+        } else {
+            VStack(alignment: .leading, spacing: 16) {
+                chartCard
+                dropsCard
+                if !rewatches.isEmpty { rewatchCard }
             }
         }
     }
 
-    // MARK: - Section Label
-    private func sectionLabel(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 17, weight: .semibold, design: .serif)) // was 16
-            .foregroundColor(AppTheme.textPrimary)
+    // MARK: - Chart
+
+    private var chartCard: some View {
+        let duration = insights?.durationSeconds ?? 0
+        let watched = vm.video.analytics?.retention ?? 0
+        let nearEnd = insights?.nearEndRetention
+
+        return VStack(alignment: .leading, spacing: 14) {
+            DeepSectionLabel("WHO KEPT WATCHING")
+
+            HStack(spacing: 16) {
+                legend(color: HomeLook.purple, dashed: false, text: "This video")
+                if vm.profile != nil {
+                    legend(color: Color(white: 0.6), dashed: true, text: "Your usual")
+                } else if vm.isLoadingUsual {
+                    HStack(spacing: 6) {
+                        ProgressView().scaleEffect(0.7)
+                        Text("Loading your usual...")
+                            .font(.system(size: 12))
+                            .foregroundColor(HomeLook.secondary)
+                    }
+                }
+                Spacer()
+            }
+
+            DeepRetentionChart(
+                curve: insights?.retentionCurve ?? [],
+                usual: vm.profile?.averageCurve ?? [],
+                dropRatios: duration > 0 ? drops.map { Double($0.startSecond) / Double(duration) } : [],
+                rewatchRatios: duration > 0 ? rewatches.map { Double($0.second) / Double(duration) } : []
+            )
+            .frame(height: 190)
+
+            HStack {
+                Text("0:00")
+                Spacer()
+                Text(DeepFormat.time(duration / 2))
+                Spacer()
+                Text(DeepFormat.time(duration))
+            }
+            .font(.system(size: 11))
+            .foregroundColor(Color(white: 0.6))
+
+            Rectangle().fill(HomeLook.hairline).frame(height: 1)
+
+            HStack(spacing: 0) {
+                stat(value: watched > 0 ? DeepFormat.pct(watched) : "-", label: "Watched on average")
+                Rectangle().fill(HomeLook.hairline).frame(width: 1, height: 40)
+                stat(value: nearEnd.map { DeepFormat.pct($0) } ?? "-", label: "Made it to the end")
+                    .padding(.leading, 16)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(PremiumWhiteCard())
     }
 
-    // MARK: - Helpers
-    private func dropPillLabel(_ drop: DropOffPoint) -> String {
-        let pct = Int(drop.elapsedTimeRatio * 100)
-        switch drop.severity {
-        case .critical: return "Big drop at \(pct)%"
-        case .warning:  return "Drop at \(pct)%"
-        case .minor:    return "Slow at \(pct)%"
+    private func legend(color: Color, dashed: Bool, text: String) -> some View {
+        HStack(spacing: 6) {
+            Path { p in
+                p.move(to: CGPoint(x: 0, y: 1))
+                p.addLine(to: CGPoint(x: 16, y: 1))
+            }
+            .stroke(color, style: StrokeStyle(lineWidth: 2, dash: dashed ? [3, 3] : []))
+            .frame(width: 16, height: 2)
+            Text(text)
+                .font(.system(size: 12))
+                .foregroundColor(HomeLook.secondary)
         }
     }
 
-    private func dropOffTitle(_ drop: DropOffPoint, index: Int) -> String {
-        let pct = Int(drop.elapsedTimeRatio * 100)
-        let causes = ["topic switch", "no re-hook", "pacing dip"]
-        let cause = index < causes.count ? causes[index] : "drop-off"
-        return "Drop at \(pct)% — \(cause)"
-    }
-
-    private func dropOffBody(_ drop: DropOffPoint, index: Int) -> String {
-        let bodies = [
-            "You likely shifted topics or introduced new information without a bridge. Viewers came for the opening promise — make sure you deliver on it before pivoting.",
-            "Long-form videos need a re-hook every 3–4 minutes. A single line — \"but here's where it gets interesting\" — can hold 80% of viewers who would have left.",
-            "The pacing slowed here. Cut to the next key point faster, or add a visual change to reset attention."
-        ]
-        return index < bodies.count ? bodies[index] : "Viewers dropped here — review what was happening at this point in the video."
-    }
-
-    private func dropOffColor(_ drop: DropOffPoint) -> Color {
-        switch drop.severity {
-        case .critical: return .red
-        case .warning:  return .orange
-        case .minor:    return .yellow
+    private func stat(value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.system(size: 22, weight: .bold))
+                .foregroundColor(HomeLook.ink)
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundColor(HomeLook.secondary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Where people left
+
+    private var dropsCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            DeepSectionLabel("WHERE PEOPLE LEFT")
+
+            if drops.isEmpty {
+                Text("No big drop. People leave slowly and evenly, which is normal for most videos.")
+                    .font(.system(size: 15))
+                    .foregroundColor(HomeLook.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(Array(drops.enumerated()), id: \.offset) { index, drop in
+                    HStack(alignment: .top, spacing: 12) {
+                        Text("\(index + 1)")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 24, height: 24)
+                            .background(Circle().fill(ReviewLook.bad))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(DeepFormat.time(drop.startSecond)) to \(DeepFormat.time(drop.endSecond))")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(HomeLook.ink)
+                            Text("About \(DeepFormat.pct(drop.lost)) of viewers left here.")
+                                .font(.system(size: 14))
+                                .foregroundColor(HomeLook.secondary)
+                        }
+                    }
+                }
+
+                tipBox("Watch these parts again. Ask: is it slow, off topic, or saying something twice? Cut or speed up parts like this next time.")
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(PremiumWhiteCard())
+    }
+
+    // MARK: - What people rewatched
+
+    private var rewatchCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            DeepSectionLabel("WHAT PEOPLE REWATCHED")
+
+            ForEach(Array(rewatches.enumerated()), id: \.offset) { _, spot in
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(ReviewLook.good))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(DeepFormat.time(spot.second))
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(HomeLook.ink)
+                        Text("People went back to watch this part again.")
+                            .font(.system(size: 14))
+                            .foregroundColor(HomeLook.secondary)
+                    }
+                }
+            }
+
+            tipBox("Do more of what happens here. The same kind of moment, example or reveal will keep people watching in your next video.")
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(PremiumWhiteCard())
+    }
+
+    private func tipBox(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("TRY THIS")
+                .font(.system(size: 11, weight: .bold))
+                .kerning(1.0)
+                .foregroundColor(HomeLook.ink)
+            Text(text)
+                .font(.system(size: 15))
+                .foregroundColor(HomeLook.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(HomeLook.fill))
     }
 }
 
-// MARK: - Retention Chart
-struct RetentionChartView: View {
+// MARK: - Chart (this video vs your usual, with drop and rewatch markers)
+
+struct DeepRetentionChart: View {
     let curve: [RetentionDataPoint]
-    let channelAvg: [RetentionDataPoint]
-    let dropOffs: [DropOffPoint]
+    let usual: [RetentionDataPoint]
+    let dropRatios: [Double]
+    let rewatchRatios: [Double]
 
     var body: some View {
-        VStack(spacing: 10) {
+        GeometryReader { g in
+            let w = g.size.width, h = g.size.height
+            let sorted = curve.sorted { $0.elapsedTimeRatio < $1.elapsedTimeRatio }
 
-            // Legend
-            HStack(spacing: 16) {
-                legendItem(color: .purple, label: "This video")
-                legendItem(color: .gray.opacity(0.5), label: "Your avg")
-                Spacer()
-            }
-            .font(.system(size: 13)) // was 12
-            .padding(.bottom, 4)
-
-            // Chart
-            GeometryReader { geo in
-                ZStack {
-
-                    // Grid lines
-                    ForEach([0.25, 0.50, 0.75, 1.0], id: \.self) { level in
-                        let y = geo.size.height * (1 - level)
-                        Path { p in
-                            p.move(to: CGPoint(x: 0, y: y))
-                            p.addLine(to: CGPoint(x: geo.size.width, y: y))
-                        }
-                        .stroke(Color.gray.opacity(0.1), style: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
+            ZStack {
+                // Grid at 25 / 50 / 75 / 100%
+                ForEach([0.25, 0.5, 0.75, 1.0], id: \.self) { level in
+                    Path { p in
+                        let y = h * (1 - level)
+                        p.move(to: CGPoint(x: 0, y: y))
+                        p.addLine(to: CGPoint(x: w, y: y))
                     }
-
-                    // Channel avg line
-                    curvePath(points: channelAvg, in: geo)
-                        .stroke(Color.gray.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
-
-                    // Area fill
-                    curveAreaPath(points: curve, in: geo)
-                        .fill(Color.purple.opacity(0.08))
-
-                    // Main curve
-                    curvePath(points: curve, in: geo)
-                        .stroke(Color.purple, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-
-                    // Drop markers
-                    ForEach(dropOffs) { drop in
-                        let x = geo.size.width * drop.elapsedTimeRatio
-                        let y = yPosition(for: drop.elapsedTimeRatio, in: geo)
-
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 8, height: 8)
-                            .position(x: x, y: y)
+                    .stroke(HomeLook.hairline, lineWidth: 1)
+                }
+                VStack {
+                    ForEach(["100%", "75%", "50%", "25%"], id: \.self) { label in
+                        HStack {
+                            Text(label).font(.system(size: 10)).foregroundColor(Color(white: 0.65))
+                            Spacer()
+                        }
+                        Spacer()
                     }
                 }
-            }
+                .padding(.top, 2)
 
-            // X axis
-            HStack {
-                Text("0%").font(.system(size: 12)).foregroundColor(.secondary)   // was 11
-                Spacer()
-                Text("50%").font(.system(size: 12)).foregroundColor(.secondary)  // was 11
-                Spacer()
-                Text("100%").font(.system(size: 12)).foregroundColor(.secondary) // was 11
+                // Your usual (dashed grey)
+                if usual.count >= 2 {
+                    line(usual, w: w, h: h)
+                        .stroke(Color(white: 0.6), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                }
+
+                // This video (fill + line)
+                area(sorted, w: w, h: h)
+                    .fill(LinearGradient(colors: [HomeLook.purple.opacity(0.18), HomeLook.purple.opacity(0)],
+                                         startPoint: .top, endPoint: .bottom))
+                line(sorted, w: w, h: h)
+                    .stroke(HomeLook.purple, style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+
+                // Markers
+                ForEach(Array(dropRatios.enumerated()), id: \.offset) { index, ratio in
+                    marker(text: "\(index + 1)", color: ReviewLook.bad)
+                        .position(x: w * ratio, y: y(at: ratio, in: sorted, h: h))
+                }
+                ForEach(Array(rewatchRatios.enumerated()), id: \.offset) { _, ratio in
+                    Circle()
+                        .fill(ReviewLook.good)
+                        .frame(width: 10, height: 10)
+                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                        .position(x: w * ratio, y: y(at: ratio, in: sorted, h: h))
+                }
             }
         }
+        .accessibilityHidden(true)
     }
 
-    private func legendItem(color: Color, label: String) -> some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(color)
-                .frame(width: 7, height: 7)
+    private func clamp(_ v: Double) -> Double { min(max(v, 0), 1) }
 
-            Text(label)
-                .foregroundColor(AppTheme.textSecondary)
-        }
-    }
-
-    private func curvePath(points: [RetentionDataPoint], in geo: GeometryProxy) -> Path {
-        Path { path in
-            guard !points.isEmpty else { return }
-
+    private func line(_ points: [RetentionDataPoint], w: CGFloat, h: CGFloat) -> Path {
+        Path { p in
             let sorted = points.sorted { $0.elapsedTimeRatio < $1.elapsedTimeRatio }
-
-            let first = sorted[0]
-            path.move(to: CGPoint(
-                x: geo.size.width * first.elapsedTimeRatio,
-                y: geo.size.height * (1 - first.audienceWatchRatio)
-            ))
-
+            guard let first = sorted.first else { return }
+            p.move(to: CGPoint(x: w * first.elapsedTimeRatio, y: h * (1 - clamp(first.audienceWatchRatio))))
             for point in sorted.dropFirst() {
-                path.addLine(to: CGPoint(
-                    x: geo.size.width * point.elapsedTimeRatio,
-                    y: geo.size.height * (1 - point.audienceWatchRatio)
-                ))
+                p.addLine(to: CGPoint(x: w * point.elapsedTimeRatio, y: h * (1 - clamp(point.audienceWatchRatio))))
             }
         }
     }
 
-    private func curveAreaPath(points: [RetentionDataPoint], in geo: GeometryProxy) -> Path {
-        Path { path in
-            guard !points.isEmpty else { return }
-
-            let sorted = points.sorted { $0.elapsedTimeRatio < $1.elapsedTimeRatio }
-
-            path.move(to: CGPoint(x: 0, y: geo.size.height))
-
-            for point in sorted {
-                path.addLine(to: CGPoint(
-                    x: geo.size.width * point.elapsedTimeRatio,
-                    y: geo.size.height * (1 - point.audienceWatchRatio)
-                ))
+    private func area(_ points: [RetentionDataPoint], w: CGFloat, h: CGFloat) -> Path {
+        Path { p in
+            guard let first = points.first, let last = points.last else { return }
+            p.move(to: CGPoint(x: w * first.elapsedTimeRatio, y: h))
+            for point in points {
+                p.addLine(to: CGPoint(x: w * point.elapsedTimeRatio, y: h * (1 - clamp(point.audienceWatchRatio))))
             }
-
-            path.addLine(to: CGPoint(x: geo.size.width, y: geo.size.height))
-            path.closeSubpath()
+            p.addLine(to: CGPoint(x: w * last.elapsedTimeRatio, y: h))
+            p.closeSubpath()
         }
     }
 
-    private func yPosition(for ratio: Double, in geo: GeometryProxy) -> CGFloat {
-        let sorted = curve.sorted { $0.elapsedTimeRatio < $1.elapsedTimeRatio }
+    private func y(at ratio: Double, in sorted: [RetentionDataPoint], h: CGFloat) -> CGFloat {
+        let closest = sorted.min { abs($0.elapsedTimeRatio - ratio) < abs($1.elapsedTimeRatio - ratio) }
+        return h * (1 - clamp(closest?.audienceWatchRatio ?? 0.5))
+    }
 
-        let closest = sorted.min {
-            abs($0.elapsedTimeRatio - ratio) < abs($1.elapsedTimeRatio - ratio)
-        }
-
-        let retention = closest?.audienceWatchRatio ?? 0.5
-
-        return geo.size.height * (1 - retention)
+    private func marker(text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .bold))
+            .foregroundColor(.white)
+            .frame(width: 18, height: 18)
+            .background(Circle().fill(color))
+            .overlay(Circle().stroke(Color.white, lineWidth: 2))
     }
 }

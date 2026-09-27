@@ -60,7 +60,7 @@ struct PostingTimeInsight {
     }
 
     var briefingLine: String {
-        let reliability = isReliable ? "" : " (early signal — more uploads will sharpen this)"
+        let reliability = isReliable ? "" : " (early sign, more uploads will make this clearer)"
         return "Your \(bestDay) uploads average \(formatViews(bestDayAvgViews)) views vs \(formatViews(worstDayAvgViews)) on \(worstDay). Post your next video on \(bestDay)\(reliability)."
     }
 
@@ -69,7 +69,7 @@ struct PostingTimeInsight {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEEE"
         let day = formatter.string(from: video.publishedAt)
-        return "Posted on \(day) — outside your best window (\(bestDay)). Early distribution may have been affected."
+        return "Posted on \(day). Your best day is \(bestDay), so it may have started slower."
     }
 
     private func formatViews(_ n: Int) -> String {
@@ -116,7 +116,7 @@ struct ChannelDiagnosis {
         case .thumbnail:
             return ChannelDiagnosis(
                 headline: "Your titles and thumbnails are your biggest growth blocker.",
-                body: "Your last \(enriched.count) videos averaged \(String(format: "%.1f", avgCTR * 100))% CTR — well below the 7% benchmark. Your content quality is solid (retention is \(String(format: "%.0f", avgRetention * 100))%), but viewers aren't clicking. The problem is the packaging, not the video.",
+                body: "Your last \(enriched.count) videos averaged \(String(format: "%.1f", avgCTR * 100))% CTR. That's low. Your content quality is solid (retention is \(String(format: "%.0f", avgRetention * 100))%), but viewers aren't clicking. The problem is the packaging, not the video.",
                 videosNeedingAttention: needsAttention
             )
         case .hook:
@@ -127,20 +127,20 @@ struct ChannelDiagnosis {
             )
         case .retention:
             return ChannelDiagnosis(
-                headline: "Viewers are dropping off mid-video — before your best content.",
+                headline: "Viewers leave partway through, before your best part.",
                 body: "Your average retention of \(String(format: "%.0f", avgRetention * 100))% suggests a pacing issue in the middle of your videos. Add a re-hook every 3–4 minutes to pull viewers back in.",
                 videosNeedingAttention: needsAttention
             )
         case .discovery:
             return ChannelDiagnosis(
                 headline: "Your videos are underperforming on discovery.",
-                body: "Views are below expectations for your subscriber count. This usually means metadata — titles, descriptions, and tags — aren't optimised for search and suggested video placement.",
+                body: "Views are below expectations for your subscriber count. This usually means your titles and descriptions aren't using the words people search for.",
                 videosNeedingAttention: needsAttention
             )
         default:
             return ChannelDiagnosis(
                 headline: "Your channel is in good health.",
-                body: "CTR and retention are both above benchmark across your recent videos. Focus on upload consistency to maintain momentum — your biggest risk right now is slowing down.",
+                body: "CTR and retention are both above benchmark across your recent videos. Keep posting on a steady schedule. The biggest risk now is slowing down.",
                 videosNeedingAttention: 0
             )
         }
@@ -157,6 +157,45 @@ final class CoachViewModel: ObservableObject {
     @Published var diagnosis: ChannelDiagnosis?
     @Published var intelligenceReport: ChannelIntelligenceReport?
     @Published var postingTimeInsight: PostingTimeInsight?
+
+    // MARK: Shorts vs long videos
+    // Shorts and long videos play by different rules, so we never mix them in one report.
+    // The switch only shows when a channel has both. The choice is shared by Coach and Intelligence.
+
+    enum FormatFilter: String, CaseIterable {
+        case long, shorts
+        var label: String { self == .long ? "Long videos" : "Shorts" }
+    }
+
+    private static let formatFilterKey = "coachFormatFilter"
+
+    @Published var formatFilter: FormatFilter =
+        FormatFilter(rawValue: UserDefaults.standard.string(forKey: "coachFormatFilter") ?? "") ?? .long {
+        didSet {
+            UserDefaults.standard.set(formatFilter.rawValue, forKey: Self.formatFilterKey)
+            rebuildReports()
+        }
+    }
+
+    /// True when the channel has at least 1 Short AND at least 1 long video
+    var hasBothFormats: Bool {
+        videos.contains { $0.isShort } && videos.contains { !$0.isShort }
+    }
+
+    /// The videos to show right now: all of them if the channel only makes one kind,
+    /// otherwise only the kind picked in the switch.
+    var shownVideos: [Video] {
+        guard hasBothFormats else { return videos }
+        return videos.filter { formatFilter == .shorts ? $0.isShort : !$0.isShort }
+    }
+
+    /// Diagnosis, patterns and best posting day, built only from the videos shown
+    func rebuildReports() {
+        let list = shownVideos
+        diagnosis          = ChannelDiagnosis.generate(from: list)
+        intelligenceReport = ChannelIntelligenceReport.generate(from: list)
+        postingTimeInsight = analyzePostingTimes(for: list)
+    }
 
     init(autoLoad: Bool = true) {
         if autoLoad {
@@ -184,9 +223,7 @@ final class CoachViewModel: ObservableObject {
                 
                 try? await Task.sleep(nanoseconds: 600_000_000) // pleasant loading feel
                 
-                self.diagnosis          = ChannelDiagnosis.generate(from: self.videos)
-                self.intelligenceReport = ChannelIntelligenceReport.generate(from: self.videos)
-                self.postingTimeInsight = analyzePostingTimes()
+                rebuildReports()
                 
                 print("✅ Demo mode: Loaded \(videos.count) mock videos")
                 return
@@ -206,9 +243,7 @@ final class CoachViewModel: ObservableObject {
 
             await enrichWithAnalytics(accessToken: token)
 
-            self.diagnosis          = ChannelDiagnosis.generate(from: self.videos)
-            self.intelligenceReport = ChannelIntelligenceReport.generate(from: self.videos)
-            self.postingTimeInsight = analyzePostingTimes()
+            rebuildReports()
 
             print("✅ Loaded \(videos.count) videos")
 
@@ -218,14 +253,15 @@ final class CoachViewModel: ObservableObject {
     }
 
     var videosByPriority: [Video] {
-        videos.sorted { a, b in
+        shownVideos.sorted { a, b in
             a.verdict.severity > b.verdict.severity
         }
     }
 
     // MARK: - Posting Time Analysis (unchanged)
-    func analyzePostingTimes() -> PostingTimeInsight? {
-        let videosWithViews = videos.filter { $0.views > 0 }
+    /// Pass a list to check only those videos (for example only Shorts, or only long videos)
+    func analyzePostingTimes(for list: [Video]? = nil) -> PostingTimeInsight? {
+        let videosWithViews = (list ?? videos).filter { $0.views > 0 }
         guard videosWithViews.count >= 4 else { return nil }
 
         let formatter = DateFormatter()
@@ -325,53 +361,101 @@ final class CoachViewModel: ObservableObject {
         return allVideos
     }
 
-    // MARK: - Analytics Enrichment (unchanged)
+    // MARK: - Analytics Enrichment (ALL TIME)
+    //
+    // Before: one request per video, last 28 days only, and a made-up CTR.
+    // Now: one "top videos" request (200 videos per page) covering the whole
+    // life of the channel, real CTR from YouTube's reach reports, and
+    // "usual views" = the middle (median) video on this channel.
     private func enrichWithAnalytics(accessToken: String) async {
         let endDate   = Date().youtubeAnalyticsDateString()
-        let startDate = Calendar.current
-            .date(byAdding: .day, value: -28, to: Date())!
-            .youtubeAnalyticsDateString()
+        let startDate = "2005-04-23"   // the day YouTube started, so this is all time
 
-        for index in videos.indices {
-            let videoId = videos[index].videoId
+        var rowsById: [String: [AnalyticsValue]] = [:]
+        var startIndex = 1
 
-            var components = URLComponents(
-                string: "https://youtubeanalytics.googleapis.com/v2/reports"
-            )!
+        while true {
+            var components = URLComponents(string: "https://youtubeanalytics.googleapis.com/v2/reports")!
             components.queryItems = [
-                .init(name: "ids",     value: "channel==MINE"),
-                .init(name: "metrics", value: "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,subscribersGained"),
-                .init(name: "filters", value: "video==\(videoId)"),
-                .init(name: "startDate", value: startDate),
-                .init(name: "endDate",   value: endDate)
+                .init(name: "ids",        value: "channel==MINE"),
+                .init(name: "dimensions", value: "video"),
+                .init(name: "metrics",    value: "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,subscribersGained,likes,comments,shares"),
+                .init(name: "sort",       value: "-views"),
+                .init(name: "maxResults", value: "200"),
+                .init(name: "startIndex", value: String(startIndex)),
+                .init(name: "startDate",  value: startDate),
+                .init(name: "endDate",    value: endDate)
             ]
 
             do {
                 let request = URLRequest(url: components.url!, bearerToken: accessToken)
                 let (data, _) = try await URLSession.shared.data(for: request)
                 let report = try JSONDecoder().decode(AnalyticsReportResponse.self, from: data)
+                let rows = report.rows ?? []
 
-                guard let row = report.rows?.first, row.count >= 4 else { continue }
+                for row in rows where row.count >= 6 {
+                    guard case .string(let id) = row[0] else { continue }
+                    rowsById[id] = Array(row.dropFirst())   // [views, minutes, avgDuration, avg%, subs, likes, comments, shares]
+                }
 
-                let views       = row[0].intValue
-                let avgDuration = row[2].intValue
-                let retention   = row[3].doubleValue / 100.0
-                let subsGained  = row.count >= 5 ? row[4].intValue : 0
-
-                videos[index].views               = views
-                videos[index].averageViewDuration = avgDuration
-                videos[index].thumbnailCTR        = retention > 0 ? 0.07 : 0.03
-                videos[index].analytics           = VideoAnalytics(
-                    ctr:                 videos[index].thumbnailCTR,
-                    averageViewDuration: avgDuration,
-                    retention:           retention,
-                    expectedViews:       max(views, 1000),
-                    subscribersGained:   subsGained
-                )
-
+                if rows.count < 200 { break }
+                startIndex += 200
             } catch {
-                print("⚠️ Analytics skipped for video:", videoId, error)
+                print("⚠️ All-time analytics failed:", error)
+                break
             }
         }
+
+        // Real thumbnail CTR (only for days YouTube has reach reports for)
+        let thumbnailStats = await YouTubeService.shared.fetchThumbnailStats()
+
+        // Short or long for every video, so each is only compared with its own kind
+        let formats = await YouTubeService.shared.fetchFormats(videoIds: videos.map(\.videoId))
+        for index in videos.indices {
+            videos[index].format = formats[videos[index].videoId]
+        }
+
+        // "Usual views" = the middle video of the SAME kind (Shorts vs long), not a made-up 1,000
+        func usual(shorts: Bool) -> Int {
+            let views = videos
+                .filter { $0.isShort == shorts }
+                .compactMap { rowsById[$0.videoId]?.first?.intValue }
+                .sorted()
+            return views.isEmpty ? 0 : views[views.count / 2]
+        }
+        let usualShortViews = usual(shorts: true)
+        let usualLongViews = usual(shorts: false)
+
+        for index in videos.indices {
+            let videoId = videos[index].videoId
+            guard let row = rowsById[videoId], row.count >= 5 else { continue }
+
+            let views       = row[0].intValue
+            let avgDuration = row[2].intValue
+            let retention   = row[3].doubleValue / 100.0
+            let subsGained  = row[4].intValue
+            // Shorts are swiped to in the feed, not clicked, so thumbnail CTR doesn't apply
+            let thumb       = videos[index].isShort ? nil : thumbnailStats[videoId]
+            let likes: Int?    = row.count >= 8 ? row[5].intValue : nil
+            let comments: Int? = row.count >= 8 ? row[6].intValue : nil
+            let shares: Int?   = row.count >= 8 ? row[7].intValue : nil
+
+            videos[index].views               = views
+            videos[index].averageViewDuration = avgDuration
+            videos[index].thumbnailCTR        = thumb?.ctr ?? 0      // 0 = not known yet
+            videos[index].analytics           = VideoAnalytics(
+                ctr:                 thumb?.ctr ?? 0,
+                averageViewDuration: avgDuration,
+                retention:           retention,
+                expectedViews:       videos[index].isShort ? usualShortViews : usualLongViews,
+                subscribersGained:   subsGained,
+                impressions:         thumb?.impressions,
+                likes:               likes,
+                comments:            comments,
+                shares:              shares
+            )
+        }
+
+        print("✅ All-time analytics for \(rowsById.count) videos, CTR for \(thumbnailStats.count)")
     }
 }

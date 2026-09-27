@@ -11,10 +11,23 @@ final class YouTubeService {
     /// The last channel loaded successfully. The paywall uses this so it
     /// doesn't have to load the channel again.
     private(set) var lastChannel: Channel?
+
+    /// Retention curves and video lengths, saved for this session so each loads once
+    private var curveCache: [String: [RetentionDataPoint]] = [:]
+    private var durationCache: [String: Int] = [:]
+    /// Curves being loaded right now, so two screens asking at once share one request
+    private var curveTasks: [String: Task<[RetentionDataPoint], Never>] = [:]
+    /// The reach job lookup in progress, so screens loading at once don't all create one
+    private var reachJobTask: Task<String?, Never>?
+    /// Short / long / live per video, saved for this session
+    private var formatCache: [String: VideoFormat] = [:]
     
     /// Call this when the user signs out, so the next account never sees the old channel.
     func clearCache() {
         lastChannel = nil
+        curveCache = [:]
+        durationCache = [:]
+        formatCache = [:]
     }
     
     /// Loads the channel, or returns nil if it fails or takes longer than `seconds`.
@@ -417,6 +430,456 @@ final class YouTubeService {
         }
     }
 
+    // MARK: - One video's daily views (for the trend line on Video Review)
+
+    /// Daily views for one video, oldest day first.
+    /// Covers the last `days` days, or since the video was posted if it's newer.
+    func fetchVideoDailyViews(videoId: String, publishedAt: Date, days: Int = 90) async -> [Double] {
+        if AuthManager.shared.isDemoMode {
+            return (0..<days).map { i -> Double in
+                let d = Double(i)
+                return 20 + d * 0.12 + sin(d * 0.45) * 6 + sin(d * 1.7) * 3
+            }
+        }
+
+        let calendar = Calendar.current
+        guard let windowStart = calendar.date(byAdding: .day, value: -days, to: Date()) else { return [] }
+        let start = max(calendar.startOfDay(for: publishedAt), windowStart)
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+
+        var components = URLComponents(string: "https://youtubeanalytics.googleapis.com/v2/reports")!
+        components.queryItems = [
+            .init(name: "ids",        value: "channel==MINE"),
+            .init(name: "metrics",    value: "views"),
+            .init(name: "dimensions", value: "day"),
+            .init(name: "sort",       value: "day"),
+            .init(name: "filters",    value: "video==\(videoId)"),
+            .init(name: "startDate",  value: formatter.string(from: start)),
+            .init(name: "endDate",    value: formatter.string(from: Date()))
+        ]
+
+        struct Response: Decodable { let rows: [[AnalyticsValue]]? }
+        do {
+            let token = try await AuthManager.shared.getValidToken()
+            let (data, _) = try await URLSession.shared.data(for: URLRequest(url: components.url!, bearerToken: token))
+            let decoded = try JSONDecoder().decode(Response.self, from: data)
+            // Each row is [day, views]
+            return (decoded.rows ?? []).compactMap { $0.count >= 2 ? $0[1].doubleValue : nil }
+        } catch {
+            print("⚠️ Daily views failed:", error)
+            return []
+        }
+    }
+
+    // MARK: - Shorts vs long videos
+    //
+    // 1. Ask YouTube Analytics for its own label (creatorContentType: SHORTS, VIDEO_ON_DEMAND, LIVE_STREAM).
+    //    YouTube has this label for views from 2019 on.
+    // 2. Anything still unknown: use the length. Up to 60s = Short, over 3 min = long.
+    //    In between (Shorts can be up to 3 min), check if youtube.com/shorts/ID stays a Shorts page.
+
+    func fetchFormats(videoIds: [String]) async -> [String: VideoFormat] {
+        if AuthManager.shared.isDemoMode {
+            return Dictionary(uniqueKeysWithValues: videoIds.map { ($0, VideoFormat.long) })
+        }
+
+        let missing = videoIds.filter { formatCache[$0] == nil }
+        if !missing.isEmpty {
+            var found: [String: (format: VideoFormat, views: Double)] = [:]
+
+            // 1. YouTube's own label, 50 videos per request
+            var index = 0
+            while index < missing.count {
+                let chunk = missing[index..<min(index + 50, missing.count)]
+                let rows = await analyticsQuery([
+                    .init(name: "dimensions", value: "video,creatorContentType"),
+                    .init(name: "metrics",    value: "views"),
+                    .init(name: "filters",    value: "video==" + chunk.joined(separator: ","))
+                ], startDate: "2019-01-01")
+                for row in rows where row.count >= 3 {
+                    guard case .string(let id) = row[0], case .string(let type) = row[1] else { continue }
+                    let views = row[2].doubleValue
+                    // A video can show up twice (a live that became a normal video): keep the bigger one
+                    if views >= (found[id]?.views ?? -1) {
+                        found[id] = (VideoFormat(apiValue: type), views)
+                    }
+                }
+                index += 50
+            }
+
+            var formats = found.mapValues { $0.format }
+
+            // 2. Fallback for the rest: length, then the Shorts page check
+            let unknown = missing.filter { formats[$0] == nil }
+            if !unknown.isEmpty {
+                let durations = await cachedDurations(unknown)
+                for id in unknown {
+                    guard let seconds = durations[id] else { continue }
+                    if seconds <= 60 {
+                        formats[id] = .short
+                    } else if seconds > 180 {
+                        formats[id] = .long
+                    } else {
+                        formats[id] = await isShortsPage(id) ? .short : .long
+                    }
+                }
+            }
+
+            formatCache.merge(formats) { _, new in new }
+            let shorts = formats.values.filter { $0 == .short }.count
+            print("🎬 Formats: \(shorts) Shorts, \(formats.count - shorts) long/live (YouTube labeled \(found.count) of \(missing.count))")
+        }
+        return formatCache.filter { videoIds.contains($0.key) }
+    }
+
+    /// youtube.com/shorts/ID stays on /shorts/ for a Short, and redirects to /watch for a normal video
+    private func isShortsPage(_ videoId: String) async -> Bool {
+        guard let url = URL(string: "https://www.youtube.com/shorts/\(videoId)") else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 10
+        let result = try? await URLSession.shared.data(for: request)
+        guard let finalURL = result?.1.url else { return false }
+        return finalURL.path.hasPrefix("/shorts/")
+    }
+
+    // MARK: - Video insights (Video Review page)
+    //
+    // Everything the review needs beyond the basic numbers, all real, all from YouTube:
+    //   - video length (Data API)
+    //   - retention curve: % still watching at each point (Analytics API)
+    //   - where views came from: search, suggested, home... (Analytics API)
+    //   - the words people searched to find it (Analytics API)
+
+    func fetchVideoInsights(videoId: String, publishedAt: Date? = nil) async -> VideoInsights {
+        if AuthManager.shared.isDemoMode { return Self.demoInsights() }
+
+        async let duration = cachedDurations([videoId])
+        async let curve = cachedCurve(videoId, publishedAt: publishedAt)
+        async let traffic = fetchTrafficSources(videoId: videoId, publishedAt: publishedAt)
+        async let terms = fetchSearchTerms(videoId: videoId, publishedAt: publishedAt)
+
+        return VideoInsights(
+            durationSeconds: await duration[videoId],
+            retentionCurve: await curve,
+            trafficViews: await traffic,
+            searchTerms: await terms
+        )
+    }
+
+    /// How well recent videos hold people at the hook moment (their "usual").
+    /// Looks at up to 8 recent videos.
+    func fetchHookBaseline(recentVideos: [Video]) async -> HookBaseline? {
+        if AuthManager.shared.isDemoMode {
+            return HookBaseline(median: 0.71, sampleCount: 8,
+                                bestTitle: "How to Get 10x More Views with Better Thumbnails (2026 Update)",
+                                bestValue: 0.82)
+        }
+        let sample = await recentInsights(recentVideos)
+        let results: [(title: String, value: Double)] = sample.compactMap { item in
+            item.insights.hookRetention.map { (item.video.title, $0) }
+        }
+        guard !results.isEmpty else { return nil }
+        let sorted = results.map(\.value).sorted()
+        let best = results.max { $0.value < $1.value }
+        return HookBaseline(median: sorted[sorted.count / 2],
+                            sampleCount: results.count,
+                            bestTitle: best?.title,
+                            bestValue: best?.value)
+    }
+
+    /// Your "usual" way people watch, from up to 8 recent videos:
+    ///  - averageCurve: the average retention line (by position in the video)
+    ///  - atSecond: the middle value at set moments (0:05, 0:10, 0:30...)
+    struct RetentionProfile {
+        let averageCurve: [RetentionDataPoint]
+        let atSecond: [Int: Double]
+        let sampleCount: Int
+        let videos: [(video: Video, insights: VideoInsights)]
+    }
+
+    func fetchRetentionProfile(recentVideos: [Video], checkpoints: [Int]) async -> RetentionProfile? {
+        let sample = await recentInsights(recentVideos)
+        guard sample.count >= 3 else { return nil }
+
+        // Average line: group points by position (0%, 1%, ... 100%)
+        var buckets: [Int: [Double]] = [:]
+        for item in sample {
+            for point in item.insights.retentionCurve {
+                buckets[Int((point.elapsedTimeRatio * 100).rounded()), default: []]
+                    .append(min(point.audienceWatchRatio, 1))
+            }
+        }
+        let averageCurve = buckets.keys.sorted().compactMap { key -> RetentionDataPoint? in
+            guard let values = buckets[key], values.count >= 3 else { return nil }
+            return RetentionDataPoint(elapsedTimeRatio: Double(key) / 100,
+                                      audienceWatchRatio: values.reduce(0, +) / Double(values.count))
+        }
+
+        // Middle value at each moment (only videos long enough for that moment)
+        var atSecond: [Int: Double] = [:]
+        for second in checkpoints {
+            let values = sample.compactMap { item -> Double? in
+                guard let d = item.insights.durationSeconds, Double(second) <= Double(d) * 0.5 else { return nil }
+                return item.insights.retention(atSecond: second)
+            }.sorted()
+            if values.count >= 3 { atSecond[second] = values[values.count / 2] }
+        }
+
+        return RetentionProfile(averageCurve: averageCurve, atSecond: atSecond,
+                                sampleCount: sample.count, videos: sample)
+    }
+
+    /// Length + retention curve for one video (cached)
+    func retentionInsights(for videoId: String, publishedAt: Date? = nil) async -> VideoInsights {
+        if AuthManager.shared.isDemoMode {
+            var demo = Self.demoInsights()
+            demo.trafficViews = [:]
+            demo.searchTerms = []
+            return demo
+        }
+        async let durations = cachedDurations([videoId])
+        async let curve = cachedCurve(videoId, publishedAt: publishedAt)
+        return VideoInsights(durationSeconds: await durations[videoId], retentionCurve: await curve)
+    }
+
+    /// Up to 8 recent videos that have a length and a retention curve
+    private func recentInsights(_ recentVideos: [Video]) async -> [(video: Video, insights: VideoInsights)] {
+        let sample = Array(recentVideos.prefix(8))
+        guard !sample.isEmpty else { return [] }
+
+        if AuthManager.shared.isDemoMode {
+            // Slightly different demo lines, so "your usual" looks real
+            return sample.enumerated().map { index, video in
+                var demo = Self.demoInsights()
+                let shift = 0.03 * Double(index % 4) + 0.04
+                demo.retentionCurve = demo.retentionCurve.map {
+                    RetentionDataPoint(elapsedTimeRatio: $0.elapsedTimeRatio,
+                                       audienceWatchRatio: max($0.audienceWatchRatio - shift * $0.elapsedTimeRatio * 2, 0.05))
+                }
+                return (video, demo)
+            }
+        }
+
+        let started = Date()
+        let durations = await cachedDurations(sample.map(\.videoId))
+
+        // Load curves 3 at a time: fast, without flooding YouTube with 8 heavy requests at once
+        var curves: [String: [RetentionDataPoint]] = [:]
+        var index = 0
+        while index < sample.count {
+            let batch = sample[index..<min(index + 3, sample.count)]
+            let loaded = await withTaskGroup(of: (String, [RetentionDataPoint]).self) { group in
+                for video in batch {
+                    group.addTask { (video.videoId, await self.cachedCurve(video.videoId, publishedAt: video.publishedAt)) }
+                }
+                var result: [String: [RetentionDataPoint]] = [:]
+                for await (id, curve) in group { result[id] = curve }
+                return result
+            }
+            curves.merge(loaded) { _, new in new }
+            index += 3
+        }
+
+        let result: [(video: Video, insights: VideoInsights)] = sample.compactMap { video in
+            guard let duration = durations[video.videoId],
+                  let curve = curves[video.videoId], curve.count >= 20 else { return nil }
+            return (video, VideoInsights(durationSeconds: duration, retentionCurve: curve, isShort: video.isShort))
+        }
+        print("⏱ Usual retention from \(result.count)/\(sample.count) videos in \(String(format: "%.1f", Date().timeIntervalSince(started)))s")
+        return result
+    }
+
+    private func cachedCurve(_ videoId: String, publishedAt: Date?) async -> [RetentionDataPoint] {
+        if let cached = curveCache[videoId] { return cached }
+        if let running = curveTasks[videoId] { return await running.value }
+
+        let task = Task { await self.fetchRetentionCurve(videoId: videoId, publishedAt: publishedAt) }
+        curveTasks[videoId] = task
+        let curve = await task.value
+        curveTasks[videoId] = nil
+        if !curve.isEmpty { curveCache[videoId] = curve }
+        return curve
+    }
+
+    private func cachedDurations(_ videoIds: [String]) async -> [String: Int] {
+        let missing = videoIds.filter { durationCache[$0] == nil }
+        if !missing.isEmpty {
+            let fetched = await fetchDurations(videoIds: missing)
+            durationCache.merge(fetched) { _, new in new }
+        }
+        return durationCache.filter { videoIds.contains($0.key) }
+    }
+
+    /// Video length in seconds, for up to 50 videos in one request
+    func fetchDurations(videoIds: [String]) async -> [String: Int] {
+        guard !videoIds.isEmpty else { return [:] }
+        var components = URLComponents(string: "https://www.googleapis.com/youtube/v3/videos")!
+        components.queryItems = [
+            .init(name: "part", value: "contentDetails"),
+            .init(name: "id",   value: videoIds.prefix(50).joined(separator: ","))
+        ]
+        struct Response: Decodable {
+            let items: [Item]?
+            struct Item: Decodable {
+                let id: String
+                let contentDetails: Details?
+                struct Details: Decodable { let duration: String? }
+            }
+        }
+        do {
+            let token = try await AuthManager.shared.getValidToken()
+            var request = URLRequest(url: components.url!, bearerToken: token)
+            request.timeoutInterval = 15
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let decoded = try JSONDecoder().decode(Response.self, from: data)
+            var result: [String: Int] = [:]
+            for item in decoded.items ?? [] {
+                if let text = item.contentDetails?.duration, let seconds = Self.seconds(fromISODuration: text) {
+                    result[item.id] = seconds
+                }
+            }
+            return result
+        } catch {
+            print("⚠️ Durations failed:", error)
+            return [:]
+        }
+    }
+
+    /// "PT1H2M3S" -> 3723
+    static func seconds(fromISODuration text: String) -> Int? {
+        guard text.hasPrefix("P") else { return nil }
+        var total = 0, number = ""
+        var inTime = false
+        for char in text.dropFirst() {
+            if char == "T" { inTime = true; continue }
+            if char.isNumber { number.append(char); continue }
+            let value = Int(number) ?? 0
+            number = ""
+            switch char {
+            case "D": total += value * 86_400
+            case "H": total += value * 3_600
+            case "M": total += inTime ? value * 60 : 0
+            case "S": total += value
+            default: break
+            }
+        }
+        return total > 0 ? total : nil
+    }
+
+    /// % still watching at each point of the video (all time)
+    func fetchRetentionCurve(videoId: String, publishedAt: Date? = nil) async -> [RetentionDataPoint] {
+        // Ask only from the day the video was posted. It's all of the video's data,
+        // but a much smaller request, so YouTube answers fast.
+        // (Asking "since 2005" made YouTube take 15+ seconds and time out.)
+        let start = publishedAt == nil ? "2020-01-01" : Self.startDate(for: publishedAt)
+
+        let rows = await analyticsQuery([
+            .init(name: "dimensions", value: "elapsedVideoTimeRatio"),
+            .init(name: "metrics",    value: "audienceWatchRatio"),
+            .init(name: "filters",    value: "video==\(videoId)")
+        ], startDate: start, timeout: 30)
+        return rows.compactMap { row -> RetentionDataPoint? in
+            guard row.count >= 2 else { return nil }
+            return RetentionDataPoint(elapsedTimeRatio: row[0].doubleValue, audienceWatchRatio: row[1].doubleValue)
+        }
+        .sorted { $0.elapsedTimeRatio < $1.elapsedTimeRatio }
+    }
+
+    /// Views by traffic source type, e.g. ["YT_SEARCH": 1200, "RELATED_VIDEO": 5400]
+    func fetchTrafficSources(videoId: String, publishedAt: Date? = nil) async -> [String: Double] {
+        let rows = await analyticsQuery(startDate: Self.startDate(for: publishedAt), [
+            .init(name: "dimensions", value: "insightTrafficSourceType"),
+            .init(name: "metrics",    value: "views"),
+            .init(name: "filters",    value: "video==\(videoId)")
+        ])
+        var result: [String: Double] = [:]
+        for row in rows where row.count >= 2 {
+            if case .string(let type) = row[0] { result[type] = row[1].doubleValue }
+        }
+        return result
+    }
+
+    /// The top words people searched on YouTube to find this video
+    func fetchSearchTerms(videoId: String, publishedAt: Date? = nil) async -> [SearchTerm] {
+        let rows = await analyticsQuery(startDate: Self.startDate(for: publishedAt), [
+            .init(name: "dimensions", value: "insightTrafficSourceDetail"),
+            .init(name: "metrics",    value: "views"),
+            .init(name: "filters",    value: "video==\(videoId);insightTrafficSourceType==YT_SEARCH"),
+            .init(name: "sort",       value: "-views"),
+            .init(name: "maxResults", value: "10")
+        ])
+        return rows.compactMap { row in
+            guard row.count >= 2, case .string(let term) = row[0], !term.isEmpty else { return nil }
+            return SearchTerm(term: term, views: row[1].intValue)
+        }
+    }
+
+    /// All-time Analytics query for this channel. Returns [] on any error.
+    /// Per-video queries: start the day before the video was posted (small and fast)
+    static func startDate(for publishedAt: Date?) -> String {
+        guard let publishedAt else { return "2005-04-23" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Calendar.current.date(byAdding: .day, value: -1, to: publishedAt) ?? publishedAt)
+    }
+
+    private func analyticsQuery(startDate: String, _ items: [URLQueryItem]) async -> [[AnalyticsValue]] {
+        await analyticsQuery(items, startDate: startDate)
+    }
+
+    private func analyticsQuery(_ items: [URLQueryItem], startDate: String = "2005-04-23", timeout: TimeInterval = 20) async -> [[AnalyticsValue]] {
+        var components = URLComponents(string: "https://youtubeanalytics.googleapis.com/v2/reports")!
+        components.queryItems = [
+            .init(name: "ids",       value: "channel==MINE"),
+            .init(name: "startDate", value: startDate),
+            .init(name: "endDate",   value: Date().youtubeAnalyticsDateString())
+        ] + items
+        struct Response: Decodable { let rows: [[AnalyticsValue]]? }
+        do {
+            let token = try await AuthManager.shared.getValidToken()
+            var request = URLRequest(url: components.url!, bearerToken: token)
+            request.timeoutInterval = timeout   // never leave a screen spinning for a minute
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                print("⚠️ Analytics \(http.statusCode):", items.map { "\($0.name)=\($0.value ?? "")" },
+                      String(data: data, encoding: .utf8)?.prefix(300) ?? "")
+                return []
+            }
+            return try JSONDecoder().decode(Response.self, from: data).rows ?? []
+        } catch {
+            print("⚠️ Analytics query failed:", items.map { "\($0.name)=\($0.value ?? "")" }, error)
+            return []
+        }
+    }
+
+    static func demoInsights() -> VideoInsights {
+        // 8:12 video: strong start, slow slide, one clear drop around 2:14
+        let duration = 492
+        let curve: [RetentionDataPoint] = (0...100).map { i in
+            let x = Double(i) / 100
+            var y = 1.0 - 0.22 * min(x / 0.06, 1)          // first seconds
+            y -= 0.20 * x                                   // slow slide
+            if x > 0.27 { y -= 0.12 * min((x - 0.27) / 0.04, 1) }   // drop at 2:14
+            if x > 0.92 { y -= 0.15 * (x - 0.92) / 0.08 }   // end screen
+            return RetentionDataPoint(elapsedTimeRatio: x, audienceWatchRatio: max(y, 0.05))
+        }
+        return VideoInsights(
+            durationSeconds: duration,
+            retentionCurve: curve,
+            trafficViews: ["SUBSCRIBER": 5800, "RELATED_VIDEO": 2400, "YT_SEARCH": 400, "EXT_URL": 900, "PLAYLIST": 500],
+            searchTerms: [
+                SearchTerm(term: "youtube algorithm 2026", views: 1200),
+                SearchTerm(term: "how to get more views", views: 640),
+                SearchTerm(term: "youtube growth tips", views: 310)
+            ]
+        )
+    }
+
     // MARK: - Thumbnail CTR (YouTube Reporting API, "reach" reports)
     //
     // CTR is NOT in the Analytics API. YouTube puts it in daily report files
@@ -437,39 +900,65 @@ final class YouTubeService {
     private var reachJobKey: String { "yt.reachJobId.\(lastChannel?.id ?? "me")" }
 
     /// Makes sure YouTube is building daily reach reports for this channel.
-    /// Safe to call many times. Only talks to YouTube the first time.
+    /// Safe to call many times, even at the same moment: they all share one request.
     @discardableResult
     func ensureReachJob() async -> String? {
         if AuthManager.shared.isDemoMode { return nil }
         if let saved = UserDefaults.standard.string(forKey: reachJobKey) { return saved }
+        if let running = reachJobTask { return await running.value }
 
+        let task = Task { await self.findOrCreateReachJob() }
+        reachJobTask = task
+        let id = await task.value
+        reachJobTask = nil
+        return id
+    }
+
+    private func findOrCreateReachJob() async -> String? {
         struct Job: Codable { let id: String?; let reportTypeId: String? }
         struct JobList: Codable { let jobs: [Job]? }
 
+        func existingJob(token: String) async throws -> String? {
+            let url = URL(string: "https://youtubereporting.googleapis.com/v1/jobs")!
+            let (data, _) = try await URLSession.shared.data(for: URLRequest(url: url, bearerToken: token))
+            let list = try JSONDecoder().decode(JobList.self, from: data)
+            return list.jobs?.first(where: { $0.reportTypeId == Self.reachReportType })?.id
+        }
+
+        func save(_ id: String) {
+            // Only save once we know which channel this is, so accounts never mix
+            if lastChannel != nil { UserDefaults.standard.set(id, forKey: reachJobKey) }
+        }
+
         do {
             let token = try await AuthManager.shared.getValidToken()
-            let jobsURL = URL(string: "https://youtubereporting.googleapis.com/v1/jobs")!
 
-            // Already have one? (for example, made on another phone)
-            let (listData, _) = try await URLSession.shared.data(for: URLRequest(url: jobsURL, bearerToken: token))
-            let list = try JSONDecoder().decode(JobList.self, from: listData)
-            if let existing = list.jobs?.first(where: { $0.reportTypeId == Self.reachReportType })?.id {
-                UserDefaults.standard.set(existing, forKey: reachJobKey)
+            // Already have one? (made earlier, or on another phone)
+            if let existing = try await existingJob(token: token) {
+                save(existing)
                 return existing
             }
 
             // Make a new one
-            var request = URLRequest(url: jobsURL, bearerToken: token)
+            var request = URLRequest(url: URL(string: "https://youtubereporting.googleapis.com/v1/jobs")!, bearerToken: token)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: [
                 "reportTypeId": Self.reachReportType,
                 "name": "SubsAI thumbnail CTR"
             ])
-            let (createdData, _) = try await URLSession.shared.data(for: request)
+            let (createdData, response) = try await URLSession.shared.data(for: request)
+
+            // 409 = it already exists (made a moment ago). Just look it up.
+            if (response as? HTTPURLResponse)?.statusCode == 409,
+               let existing = try await existingJob(token: token) {
+                save(existing)
+                return existing
+            }
+
             let job = try JSONDecoder().decode(Job.self, from: createdData)
             if let id = job.id {
-                UserDefaults.standard.set(id, forKey: reachJobKey)
+                save(id)
                 print("✅ Reach report job created:", id)
             } else {
                 print("⚠️ Reach job not created:", String(data: createdData, encoding: .utf8) ?? "")
@@ -522,15 +1011,17 @@ final class YouTubeService {
                 newestPerDay[day] = report
             }
 
-            // 2. Download only the files we haven't seen yet
+            // 2. Download only days we don't have yet (or that YouTube re-made).
+            // The cache is saved by day and never trimmed. YouTube deletes its
+            // files after about 60 days, so this is how the history keeps growing.
             var cache = loadReachCache()
-            for report in newestPerDay.values where cache[report.id] == nil {
+            for (day, report) in newestPerDay where cache[day]?.reportId != report.id {
                 guard let urlString = report.downloadUrl, let url = URL(string: urlString) else { continue }
                 let (csv, _) = try await URLSession.shared.data(for: URLRequest(url: url, bearerToken: token))
-                cache[report.id] = Self.parseReach(csv)
+                var parsed = Self.parseReach(csv)
+                parsed.reportId = report.id
+                cache[day] = parsed
             }
-            let keep = Set(newestPerDay.values.map(\.id))
-            cache = cache.filter { keep.contains($0.key) }
             saveReachCache(cache)
 
             // 3. Add up every day
@@ -560,6 +1051,7 @@ final class YouTubeService {
     struct ReachDay: Codable {
         var rows: [String: [Double]]   // videoId -> [impressions, impressions x raw CTR]
         var maxCTR: Double
+        var reportId: String? = nil
     }
 
     private static func parseReach(_ data: Data) -> ReachDay {
@@ -593,8 +1085,10 @@ final class YouTubeService {
     }
 
     private var reachCacheURL: URL {
-        let folder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        return folder.appendingPathComponent("reach-\(lastChannel?.id ?? "me").json")
+        // Application Support, not Caches: iOS can wipe Caches, and this history can't be downloaded again
+        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder.appendingPathComponent("reach-v2-\(lastChannel?.id ?? "me").json")
     }
 
     private func loadReachCache() -> [String: ReachDay] {

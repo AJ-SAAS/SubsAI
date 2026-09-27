@@ -1,11 +1,44 @@
 // Models/ChannelIntelligence.swift
+// Channel-wide patterns. Real numbers only:
+//  - Subs per 1K views = total subs / total views (not an estimate from CTR)
+//  - CTR is only used for videos where YouTube gave us a real CTR (hasCTR)
+//  - Tiny videos (under 100 views) are left out of averages, so luck can't skew them
 import Foundation
+
+private extension Array where Element == Video {
+    /// Videos with analytics and at least `minViews` views
+    func withData(minViews: Int = 100) -> [Video] {
+        filter { $0.analytics != nil && $0.views >= minViews }
+    }
+    /// Only videos with a real CTR from YouTube
+    var withCTR: [Video] { filter { $0.analytics?.hasCTR ?? false } }
+}
+
+/// Impressions-weighted CTR when we have impressions, plain average otherwise
+private func averageCTR(_ videos: [Video]) -> Double? {
+    let known = videos.withCTR
+    guard !known.isEmpty else { return nil }
+    let weighted = known.compactMap { v -> (Double, Double)? in
+        guard let a = v.analytics, let imp = a.impressions, imp > 0 else { return nil }
+        return (a.ctr * imp, imp)
+    }
+    if weighted.count == known.count {
+        let totalImp = weighted.map(\.1).reduce(0, +)
+        if totalImp > 0 { return weighted.map(\.0).reduce(0, +) / totalImp }
+    }
+    return known.compactMap { $0.analytics?.ctr }.reduce(0, +) / Double(known.count)
+}
 
 // MARK: - Growth Quality Score
 struct GrowthQualityScore {
+    /// Real: all new subs / all views x 1000
     let subsPerThousandViews: Double
+    /// Average watch time per view, in minutes (views-weighted)
     let valuePerImpression: Double
+    /// Average % of a video people watch (views-weighted)
     let retentionStrength: Double
+    /// Channel CTR, nil until YouTube's reach reports arrive
+    let channelCTR: Double?
     let composite: Double
     let grade: Grade
 
@@ -19,35 +52,31 @@ struct GrowthQualityScore {
     }
 
     static func compute(from videos: [Video]) -> GrowthQualityScore {
-        let enriched = videos.filter { $0.analytics != nil && $0.views > 0 }
-        guard !enriched.isEmpty else {
-            return GrowthQualityScore(
-                subsPerThousandViews: 0,
-                valuePerImpression: 0,
-                retentionStrength: 0,
-                composite: 0,
-                grade: .c
-            )
+        let enriched = videos.withData()
+        let totalViews = enriched.map { Double($0.views) }.reduce(0, +)
+        guard !enriched.isEmpty, totalViews > 0 else {
+            return GrowthQualityScore(subsPerThousandViews: 0, valuePerImpression: 0,
+                                      retentionStrength: 0, channelCTR: nil, composite: 0, grade: .c)
         }
 
-        let avgRetention = enriched.compactMap { $0.analytics?.retention }
-            .reduce(0, +) / Double(enriched.count)
+        let totalSubs = enriched.map { Double($0.analytics?.subscribersGained ?? 0) }.reduce(0, +)
+        let subsPerK = totalSubs / totalViews * 1000
 
-        let avgCTR = enriched.compactMap { $0.analytics?.ctr }
-            .reduce(0, +) / Double(enriched.count)
+        let retention = enriched.map { ($0.analytics?.retention ?? 0) * Double($0.views) }.reduce(0, +) / totalViews
+        let watchMinutes = enriched.map { Double($0.analytics?.averageViewDuration ?? 0) * Double($0.views) }
+            .reduce(0, +) / totalViews / 60
 
-        let avgDuration = enriched.compactMap {
-            Double($0.analytics?.averageViewDuration ?? 0)
-        }.reduce(0, +) / Double(enriched.count)
+        let ctr = averageCTR(enriched)
 
-        let estimatedSubRate  = avgRetention * avgCTR * 8.0
-        let subsPerK          = estimatedSubRate * 10.0
-        let valuePerImpression = avgCTR * avgRetention * (avgDuration / 60.0)
-
-        let ctrScore = min(avgCTR / 0.07, 1.0) * 3.0
-        let retScore = min(avgRetention / 0.50, 1.0) * 4.0
+        // Score out of 10. CTR only counts when we really have it.
+        let retScore = min(retention / 0.50, 1.0) * 4.0
         let subScore = min(subsPerK / 1.0, 1.0) * 3.0
-        let composite = ctrScore + retScore + subScore
+        let composite: Double
+        if let ctr {
+            composite = retScore + subScore + min(ctr / 0.07, 1.0) * 3.0
+        } else {
+            composite = (retScore + subScore) / 7.0 * 10.0
+        }
 
         let grade: Grade
         switch composite {
@@ -61,8 +90,9 @@ struct GrowthQualityScore {
 
         return GrowthQualityScore(
             subsPerThousandViews: subsPerK,
-            valuePerImpression: valuePerImpression,
-            retentionStrength: avgRetention,
+            valuePerImpression: watchMinutes,
+            retentionStrength: retention,
+            channelCTR: ctr,
             composite: composite,
             grade: grade
         )
@@ -80,124 +110,97 @@ struct WinningPattern: Identifiable {
 
     static func detect(from videos: [Video]) -> [WinningPattern] {
         var patterns: [WinningPattern] = []
-        let enriched = videos.filter { $0.analytics != nil && $0.views > 100 }
+        let enriched = videos.withData()
         guard enriched.count >= 3 else { return [] }
 
-        let avgCTR = enriched.compactMap { $0.analytics?.ctr }
-            .reduce(0, +) / Double(enriched.count)
+        // Title patterns need real CTR
+        let ctrVideos = enriched.withCTR
 
-        // Pattern 1 — challenge / story format
+        func avgCTR(_ list: [Video]) -> Double {
+            list.compactMap { $0.analytics?.ctr }.reduce(0, +) / Double(max(list.count, 1))
+        }
+
+        // Pattern 1: challenge / story format
         let challengeKeywords = ["i tried", "i spent", "i did", "days", "hours",
-                                  "challenge", "for a week", "for a month"]
-        let challengeVideos = enriched.filter { v in
-            challengeKeywords.contains { v.title.lowercased().contains($0) }
-        }
-        let nonChallengeVideos = enriched.filter { v in
-            !challengeKeywords.contains { v.title.lowercased().contains($0) }
-        }
-
-        if challengeVideos.count >= 2 && !nonChallengeVideos.isEmpty {
-            let challengeCTR = challengeVideos.compactMap { $0.analytics?.ctr }
-                .reduce(0, +) / Double(challengeVideos.count)
-            let otherCTR = nonChallengeVideos.compactMap { $0.analytics?.ctr }
-                .reduce(0, +) / Double(nonChallengeVideos.count)
-            if otherCTR > 0 {
-                let lift = challengeCTR / otherCTR
-                if lift > 1.2 {
-                    patterns.append(WinningPattern(
-                        title: "Challenge / story format",
-                        description: "\(challengeVideos.count) of your videos use personal challenge framing — these consistently outperform your others",
-                        liftText: String(format: "+%.1fx CTR", lift),
-                        liftIsPositive: true,
-                        icon: "bolt.fill"
-                    ))
-                }
+                                 "challenge", "for a week", "for a month"]
+        let isChallenge: (Video) -> Bool = { v in challengeKeywords.contains { v.title.lowercased().contains($0) } }
+        let challengeVideos = ctrVideos.filter(isChallenge)
+        let otherVideos = ctrVideos.filter { !isChallenge($0) }
+        if challengeVideos.count >= 2, otherVideos.count >= 2 {
+            let lift = avgCTR(challengeVideos) / max(avgCTR(otherVideos), 0.0001)
+            if lift > 1.2 {
+                patterns.append(WinningPattern(
+                    title: "Challenge and story titles",
+                    description: "\(challengeVideos.count) of your videos use \"I tried\" or challenge titles. They get more clicks than your others.",
+                    liftText: String(format: "+%.1fx CTR", lift),
+                    liftIsPositive: true,
+                    icon: "bolt.fill"
+                ))
             }
         }
 
-        // Pattern 2 — numbers in titles
-        let numberVideos = enriched.filter { v in
-            v.title.range(of: #"\d+"#, options: .regularExpression) != nil
-        }
-        let noNumberVideos = enriched.filter { v in
-            v.title.range(of: #"\d+"#, options: .regularExpression) == nil
-        }
-
-        if numberVideos.count >= 2 && !noNumberVideos.isEmpty {
-            let numCTR   = numberVideos.compactMap { $0.analytics?.ctr }
-                .reduce(0, +) / Double(numberVideos.count)
-            let noNumCTR = noNumberVideos.compactMap { $0.analytics?.ctr }
-                .reduce(0, +) / Double(noNumberVideos.count)
-            if noNumCTR > 0 {
-                let lift = numCTR / noNumCTR
-                if lift > 1.15 {
-                    patterns.append(WinningPattern(
-                        title: "Numbers in titles",
-                        description: "Titles with specific numbers get \(String(format: "%.0f", (lift - 1) * 100))% more clicks on your channel",
-                        liftText: String(format: "+%.0f%% CTR", (lift - 1) * 100),
-                        liftIsPositive: true,
-                        icon: "number"
-                    ))
-                }
+        // Pattern 2: numbers in titles
+        let hasNumber: (Video) -> Bool = { $0.title.range(of: #"\d+"#, options: .regularExpression) != nil }
+        let numberVideos = ctrVideos.filter(hasNumber)
+        let noNumberVideos = ctrVideos.filter { !hasNumber($0) }
+        if numberVideos.count >= 2, noNumberVideos.count >= 2 {
+            let lift = avgCTR(numberVideos) / max(avgCTR(noNumberVideos), 0.0001)
+            if lift > 1.15 {
+                patterns.append(WinningPattern(
+                    title: "Numbers in titles",
+                    description: "Titles with a number get \(String(format: "%.0f", (lift - 1) * 100))% more clicks on your channel.",
+                    liftText: String(format: "+%.0f%% CTR", (lift - 1) * 100),
+                    liftIsPositive: true,
+                    icon: "number"
+                ))
             }
         }
 
-        // Pattern 3 — video length
-        let shortVideos = enriched.filter { v in
-            guard let a = v.analytics, a.retention > 0 else { return false }
-            return Double(a.averageViewDuration) / a.retention < 600
+        // Pattern 3: video length (real % watched, no CTR needed)
+        func length(_ v: Video) -> Double? {
+            guard let a = v.analytics, a.retention > 0 else { return nil }
+            return Double(a.averageViewDuration) / a.retention
         }
-        let longVideos = enriched.filter { v in
-            guard let a = v.analytics, a.retention > 0 else { return false }
-            return Double(a.averageViewDuration) / a.retention >= 600
-        }
-
+        let shortVideos = enriched.filter { (length($0) ?? 0) > 0 && (length($0) ?? 0) < 600 }
+        let longVideos = enriched.filter { (length($0) ?? 0) >= 600 }
         if shortVideos.count >= 2 && longVideos.count >= 2 {
-            let shortRet = shortVideos.compactMap { $0.analytics?.retention }
-                .reduce(0, +) / Double(shortVideos.count)
-            let longRet  = longVideos.compactMap { $0.analytics?.retention }
-                .reduce(0, +) / Double(longVideos.count)
-
+            let shortRet = shortVideos.compactMap { $0.analytics?.retention }.reduce(0, +) / Double(shortVideos.count)
+            let longRet = longVideos.compactMap { $0.analytics?.retention }.reduce(0, +) / Double(longVideos.count)
             if shortRet > longRet * 1.1 {
                 patterns.append(WinningPattern(
-                    title: "Shorter videos retain more",
-                    description: "Videos under 10 min average \(String(format: "%.0f", shortRet * 100))% retention vs \(String(format: "%.0f", longRet * 100))% for longer ones",
-                    liftText: String(format: "+%.0f%% retention", (shortRet - longRet) * 100),
+                    title: "Shorter videos keep people watching",
+                    description: "Videos under 10 min: people watch \(String(format: "%.0f", shortRet * 100))%. Longer ones: \(String(format: "%.0f", longRet * 100))%.",
+                    liftText: String(format: "+%.0f%% watched", (shortRet - longRet) * 100),
                     liftIsPositive: true,
                     icon: "clock.fill"
                 ))
             } else if longRet > shortRet * 1.1 {
                 patterns.append(WinningPattern(
-                    title: "Longer videos perform better",
-                    description: "Your audience prefers depth — videos over 10 min average \(String(format: "%.0f", longRet * 100))% retention",
-                    liftText: String(format: "+%.0f%% retention", (longRet - shortRet) * 100),
+                    title: "Longer videos do better",
+                    description: "Your viewers like depth. Videos over 10 min: people watch \(String(format: "%.0f", longRet * 100))%.",
+                    liftText: String(format: "+%.0f%% watched", (longRet - shortRet) * 100),
                     liftIsPositive: true,
                     icon: "clock.fill"
                 ))
             }
         }
 
-        // Pattern 4 — best posting day
+        // Pattern 4: best posting day (by views, 2+ videos per day)
         let calendar = Calendar.current
-        let dayGroups = Dictionary(grouping: enriched) { v in
-            calendar.component(.weekday, from: v.publishedAt)
-        }
-        var bestDay: (name: String, ctr: Double)?
+        let dayGroups = Dictionary(grouping: enriched) { calendar.component(.weekday, from: $0.publishedAt) }
+        let allAvgViews = enriched.map { Double($0.views) }.reduce(0, +) / Double(enriched.count)
+        var bestDay: (name: String, avg: Double)?
         for (day, dayVideos) in dayGroups where dayVideos.count >= 2 {
-            let dayCTR = dayVideos.compactMap { $0.analytics?.ctr }
-                .reduce(0, +) / Double(dayVideos.count)
-            if dayCTR > avgCTR * 1.2 {
-                let dayName = calendar.weekdaySymbols[day - 1]
-                if bestDay == nil || dayCTR > bestDay!.ctr {
-                    bestDay = (dayName, dayCTR)
-                }
+            let avg = dayVideos.map { Double($0.views) }.reduce(0, +) / Double(dayVideos.count)
+            if avg > allAvgViews * 1.3, avg > (bestDay?.avg ?? 0) {
+                bestDay = (calendar.weekdaySymbols[day - 1], avg)
             }
         }
         if let best = bestDay {
             patterns.append(WinningPattern(
                 title: "\(best.name) is your best posting day",
-                description: "Videos posted on \(best.name) consistently outperform your weekly average CTR",
-                liftText: String(format: "%.1f%% CTR", best.ctr * 100),
+                description: "Videos posted on \(best.name) get more views than your average.",
+                liftText: String(format: "+%.0f%% views", (best.avg / allAvgViews - 1) * 100),
                 liftIsPositive: true,
                 icon: "calendar"
             ))
@@ -224,11 +227,11 @@ enum ReplicationScore: String {
     var explanation: String {
         switch self {
         case .replicate:
-            return "This format consistently works. Study the hook, format, and title — then repeat it."
+            return "This format works. Study the hook, format and title, then do it again."
         case .oneOff:
-            return "This outperformed your average but doesn't fit a clear repeatable pattern. Don't over-index on it."
+            return "This beat your average, but doesn't fit a clear pattern. Don't copy it too closely."
         case .avoid:
-            return "This format underperforms across CTR, retention, and views. Don't repeat it without major changes."
+            return "This format did worse on clicks, watch time and views. Change it a lot before trying again."
         }
     }
 
@@ -238,15 +241,17 @@ enum ReplicationScore: String {
         channelAvgRetention: Double
     ) -> ReplicationScore {
         guard let analytics = video.analytics else { return .oneOff }
+        // Tiny videos can't prove anything either way
+        guard video.views >= 100 else { return .oneOff }
 
-        let ctrRatio       = channelAvgCTR > 0
-            ? analytics.ctr / channelAvgCTR : 1.0
-        let retentionRatio = channelAvgRetention > 0
-            ? analytics.retention / channelAvgRetention : 1.0
-        let viewsRatio     = analytics.expectedViews > 0
-            ? Double(video.views) / Double(analytics.expectedViews) : 1.0
+        // CTR only counts when both this video and the channel have real CTR
+        let ctrRatio = (analytics.hasCTR && channelAvgCTR > 0) ? analytics.ctr / channelAvgCTR : 1.0
+        let retentionRatio = channelAvgRetention > 0 ? analytics.retention / channelAvgRetention : 1.0
+        // expectedViews = the channel's usual (median) views
+        let viewsRatio = analytics.expectedViews > 0
+            ? min(Double(video.views) / Double(analytics.expectedViews), 3.0) : 1.0
 
-        let score = (ctrRatio * 0.4) + (retentionRatio * 0.4) + (viewsRatio * 0.2)
+        let score = (ctrRatio * 0.3) + (retentionRatio * 0.3) + (viewsRatio * 0.4)
 
         if score >= 1.25      { return .replicate }
         else if score >= 0.75 { return .oneOff }
@@ -267,70 +272,62 @@ struct StructuralWeakness: Identifiable {
 
     static func detect(from videos: [Video]) -> [StructuralWeakness] {
         var weaknesses: [StructuralWeakness] = []
-        let enriched = videos.filter { $0.analytics != nil }
+        let enriched = videos.withData()
         guard enriched.count >= 3 else { return [] }
 
-        let avgRetention = enriched.compactMap { $0.analytics?.retention }
-            .reduce(0, +) / Double(enriched.count)
-        let avgCTR = enriched.compactMap { $0.analytics?.ctr }
-            .reduce(0, +) / Double(enriched.count)
-        let avgDuration = enriched.compactMap {
-            Double($0.analytics?.averageViewDuration ?? 0)
-        }.reduce(0, +) / Double(enriched.count)
+        let avgRetention = enriched.compactMap { $0.analytics?.retention }.reduce(0, +) / Double(enriched.count)
+        let avgDuration = enriched.map { Double($0.analytics?.averageViewDuration ?? 0) }.reduce(0, +) / Double(enriched.count)
 
-        // Weak hooks
         if avgDuration < 45 {
             weaknesses.append(StructuralWeakness(
                 severity: .critical,
-                title: "Hooks are losing viewers fast",
-                detail: "Average watch duration is \(Int(avgDuration))s — most viewers leave before your content starts. Open with the payoff, not the setup."
+                title: "People leave fast",
+                detail: "People watch \(Int(avgDuration)) seconds on average. Open with the best part, not the setup."
             ))
         }
 
-        // Low CTR
-        if avgCTR < 0.04 {
-            weaknesses.append(StructuralWeakness(
-                severity: .critical,
-                title: "Thumbnails and titles aren't converting",
-                detail: "Channel average CTR is \(String(format: "%.1f", avgCTR * 100))% — well below the 4–7% benchmark. This is your single biggest growth lever right now."
-            ))
-        } else if avgCTR < 0.06 {
-            weaknesses.append(StructuralWeakness(
-                severity: .warning,
-                title: "CTR has room to improve",
-                detail: "Average \(String(format: "%.1f", avgCTR * 100))% CTR. One thumbnail iteration could meaningfully increase your reach."
-            ))
+        // CTR checks only with real CTR on 3+ videos
+        if enriched.withCTR.count >= 3, let avgCTR = averageCTR(enriched) {
+            if avgCTR < 0.03 {
+                weaknesses.append(StructuralWeakness(
+                    severity: .critical,
+                    title: "Few people click your thumbnails",
+                    detail: "Your CTR is \(String(format: "%.1f", avgCTR * 100))%. Clearer thumbnails and titles are your biggest growth lever right now."
+                ))
+            } else if avgCTR < 0.045 {
+                weaknesses.append(StructuralWeakness(
+                    severity: .warning,
+                    title: "CTR has room to grow",
+                    detail: "Your CTR is \(String(format: "%.1f", avgCTR * 100))%. One better thumbnail style could bring a lot more views."
+                ))
+            }
+
+            let ctrValues = enriched.withCTR.compactMap { $0.analytics?.ctr }
+            if ctrValues.count >= 4 {
+                let mean = ctrValues.reduce(0, +) / Double(ctrValues.count)
+                let variance = ctrValues.map { pow($0 - mean, 2) }.reduce(0, +) / Double(ctrValues.count)
+                if mean > 0, sqrt(variance) / mean > 0.6 {
+                    weaknesses.append(StructuralWeakness(
+                        severity: .warning,
+                        title: "Your results jump around a lot",
+                        detail: "Clicks change a lot from video to video. Look at what your top 3 videos have in common and repeat it."
+                    ))
+                }
+            }
         }
 
-        // Low retention
         if avgRetention < 0.30 {
             weaknesses.append(StructuralWeakness(
                 severity: .critical,
-                title: "Mid-video drop-off is a consistent pattern",
-                detail: "Average retention of \(String(format: "%.0f", avgRetention * 100))% suggests a structural pacing issue. Add a re-hook every 3–4 minutes."
+                title: "People leave partway through",
+                detail: "People watch \(String(format: "%.0f", avgRetention * 100))% of your videos on average. Tease what's coming next every few minutes."
             ))
         } else if avgRetention < 0.40 {
             weaknesses.append(StructuralWeakness(
                 severity: .warning,
-                title: "Retention drops before your best content",
-                detail: "At \(String(format: "%.0f", avgRetention * 100))% average retention, viewers are leaving before the payoff. Front-load more value in the first half."
+                title: "People leave before the best part",
+                detail: "People watch \(String(format: "%.0f", avgRetention * 100))% on average. Put more value in the first half."
             ))
-        }
-
-        // Inconsistent results
-        let ctrValues = enriched.compactMap { $0.analytics?.ctr }
-        if ctrValues.count >= 4 {
-            let mean     = ctrValues.reduce(0, +) / Double(ctrValues.count)
-            let variance = ctrValues.map { pow($0 - mean, 2) }.reduce(0, +) / Double(ctrValues.count)
-            let stdDev   = sqrt(variance)
-            let cv       = mean > 0 ? stdDev / mean : 0
-            if cv > 0.6 {
-                weaknesses.append(StructuralWeakness(
-                    severity: .warning,
-                    title: "Inconsistent results across videos",
-                    detail: "Your CTR varies wildly between videos. You haven't found a repeatable formula yet — focus on what your top 3 videos have in common."
-                ))
-            }
         }
 
         return Array(weaknesses.prefix(3))
@@ -342,13 +339,12 @@ struct ChannelIntelligenceReport {
     let growthQualityScore: GrowthQualityScore
     let winningPatterns: [WinningPattern]
     let structuralWeaknesses: [StructuralWeakness]
+    /// 0 when YouTube hasn't sent CTR yet
     let channelAvgCTR: Double
     let channelAvgRetention: Double
 
     static func generate(from videos: [Video]) -> ChannelIntelligenceReport {
-        let enriched = videos.filter { $0.analytics != nil }
-        let avgCTR = enriched.compactMap { $0.analytics?.ctr }
-            .reduce(0, +) / Double(max(enriched.count, 1))
+        let enriched = videos.withData()
         let avgRetention = enriched.compactMap { $0.analytics?.retention }
             .reduce(0, +) / Double(max(enriched.count, 1))
 
@@ -356,7 +352,7 @@ struct ChannelIntelligenceReport {
             growthQualityScore:   GrowthQualityScore.compute(from: videos),
             winningPatterns:      WinningPattern.detect(from: videos),
             structuralWeaknesses: StructuralWeakness.detect(from: videos),
-            channelAvgCTR:        avgCTR,
+            channelAvgCTR:        averageCTR(enriched) ?? 0,
             channelAvgRetention:  avgRetention
         )
     }

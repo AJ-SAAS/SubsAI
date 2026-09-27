@@ -11,6 +11,10 @@ struct WelcomeView: View {
     
     @State private var currentPage = 0
     @State private var animateIn = false
+    @State private var pulse = false
+    
+    /// When each page's animation is done, so the button can nudge once
+    private let pageDurations: [Double] = [2.2, 4.4, 7.0]
     
     private let pages: [OnboardingPage] = [
         OnboardingPage(kind: .night, trustLine: "Built for YouTubers who want to grow", trustAvatar: "AppIconImage"),
@@ -71,6 +75,7 @@ struct WelcomeView: View {
                             }
                         } label: {
                             Text(buttonTitle)
+                                .contentTransition(.opacity)
                                 .font(.system(size: 18, weight: .semibold))
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
@@ -87,6 +92,7 @@ struct WelcomeView: View {
                                 )
                                 .cornerRadius(16)
                         }
+                        .scaleEffect(pulse ? 1.04 : 1)
                         .padding(.horizontal, 32)
                         
                         HStack(spacing: 10) {
@@ -118,6 +124,17 @@ struct WelcomeView: View {
                 animateIn = true
             }
         }
+        // One gentle pulse on the button when the page's animation is done.
+        // (No auto-swipe: people read at different speeds.)
+        .task(id: currentPage) {
+            pulse = false
+            let wait = pageDurations[min(currentPage, pageDurations.count - 1)]
+            try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.18)) { pulse = true }
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            withAnimation(.easeInOut(duration: 0.25)) { pulse = false }
+        }
     }
     
     private var buttonTitle: String {
@@ -135,8 +152,8 @@ struct WelcomeView: View {
             Spacer(minLength: 24)
             
             // Animated title (plays first)
+            // Restarts by itself when the page opens (no rebuild needed)
             OnboardingTitle(kind: page.kind, isActive: isActive)
-                .id(isActive)   // fresh start every time this page opens
                 .padding(.horizontal, 24)
                 .frame(width: geo.size.width)
             
@@ -153,15 +170,14 @@ struct WelcomeView: View {
                             ],
                             center: .center,
                             startRadius: 10,
-                            endRadius: imageSize * 0.9
+                            endRadius: imageSize * 0.95
                         )
                     )
-                    .frame(width: imageSize * 1.25, height: imageSize * 1.25)
-                    .blur(radius: 24)
+                    .frame(width: imageSize * 1.35, height: imageSize * 1.35)
+                    // (no .blur: a live blur this big is slow; the gradient is already soft)
                 
                 // Animated visual (plays right after the title)
                 visual(for: page.kind, isActive: isActive, size: imageSize)
-                    .id(isActive)   // fresh start every time this page opens
                     .frame(width: imageSize, height: imageSize)
                     .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
                     .overlay(
@@ -194,6 +210,34 @@ struct WelcomeView: View {
                     .padding(16)
             }
         }
+    }
+}
+
+// MARK: - SCENE CLOCK
+// Every animation step has a fixed time on a timeline (like a video).
+// If the phone is busy for a moment, steps that are already late SNAP into place
+// instead of waiting in a queue and then all playing at once (the old "freeze, then rush").
+struct SceneClock {
+    let start = Date()
+
+    /// Waits until `seconds` after the scene started.
+    /// Returns true if we're on time (so animate), false if we're late (so snap).
+    func wait(until seconds: Double) async -> Bool {
+        let target = start.addingTimeInterval(seconds)
+        let delay = target.timeIntervalSinceNow
+        if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+        return Date().timeIntervalSince(target) < 0.2
+    }
+}
+
+/// Animate when on time, snap (no animation) when late
+func sceneStep(_ onTime: Bool, _ animation: Animation, _ body: () -> Void) {
+    if onTime {
+        withAnimation(animation, body)
+    } else {
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t, body)
     }
 }
 
@@ -368,33 +412,35 @@ struct NightStatsScene: View {
                 return
             }
             
+            let clock = SceneClock()
+            
             // First refresh starts right away
             withAnimation(.easeInOut(duration: 0.6)) { rotation += 360 }
             
             // "0 new subs today" at 0.3s, then it stays
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            var onTime = await clock.wait(until: 0.3)
             if Task.isCancelled { return }
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { showToast = true }
+            sceneStep(onTime, .spring(response: 0.35, dampingFraction: 0.8)) { showToast = true }
             
             // Views tick up, subs stay stuck
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            onTime = await clock.wait(until: 0.55)
             if Task.isCancelled { return }
-            withAnimation(.easeOut(duration: 0.25)) { views += Int.random(in: 1...3) }
-            withAnimation(.linear(duration: 0.35)) { shakes += 1 }
+            sceneStep(onTime, .easeOut(duration: 0.25)) { views += Int.random(in: 1...3) }
+            if onTime { withAnimation(.linear(duration: 0.35)) { shakes += 1 } }
             
-            // Then keep refreshing: clock moves on, views go up, subs never move
+            // Then keep refreshing every 1.95s: clock moves on, views go up, subs never move
             var step = 1
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_400_000_000)
+                let base = 0.55 + Double(step) * 1.95
+                onTime = await clock.wait(until: base - 0.55)
                 if Task.isCancelled { return }
+                sceneStep(onTime, .easeInOut(duration: 0.25)) { timeIndex = min(step, times.count - 1) }
+                if onTime { withAnimation(.easeInOut(duration: 0.6)) { rotation += 360 } }
                 
-                withAnimation(.easeInOut(duration: 0.25)) { timeIndex = min(step, times.count - 1) }
-                withAnimation(.easeInOut(duration: 0.6)) { rotation += 360 }
-                try? await Task.sleep(nanoseconds: 550_000_000)
+                onTime = await clock.wait(until: base)
                 if Task.isCancelled { return }
-                
-                withAnimation(.easeOut(duration: 0.25)) { views += Int.random(in: 1...3) }
-                withAnimation(.linear(duration: 0.35)) { shakes += 1 }
+                sceneStep(onTime, .easeOut(duration: 0.25)) { views += Int.random(in: 1...3) }
+                if onTime { withAnimation(.linear(duration: 0.35)) { shakes += 1 } }
                 step += 1
             }
         }
@@ -661,58 +707,61 @@ struct TipsRevealView: View {
                 return
             }
             
+            let clock = SceneClock()
+            
             // Let the title land first
-            try? await Task.sleep(nanoseconds: 350_000_000)
+            var onTime = await clock.wait(until: 0.35)
+            if Task.isCancelled { return }
             
             // 1. Pull the videos into the orb
             for i in 0..<6 {
-                withAnimation(.easeIn(duration: 0.42).delay(Double(i) * 0.1)) {
+                sceneStep(onTime, .easeIn(duration: 0.42).delay(Double(i) * 0.1)) {
                     tilesGone[i] = true
                 }
             }
-            withAnimation(.linear(duration: 0.95)) { ring = 1 }
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            if Task.isCancelled { return }
+            sceneStep(onTime, .linear(duration: 0.95)) { ring = 1 }
             
             // 2. Burst
-            withAnimation(.easeOut(duration: 0.12)) {
+            onTime = await clock.wait(until: 1.35)
+            if Task.isCancelled { return }
+            sceneStep(onTime, .easeOut(duration: 0.12)) {
                 flash = 1
                 checkingOn = false
             }
-            withAnimation(.easeOut(duration: 0.3)) { orbGone = true }
-            try? await Task.sleep(nanoseconds: 120_000_000)
-            withAnimation(.easeOut(duration: 0.45)) { flash = 2 }
-            try? await Task.sleep(nanoseconds: 150_000_000)
+            sceneStep(onTime, .easeOut(duration: 0.3)) { orbGone = true }
+            onTime = await clock.wait(until: 1.47)
+            sceneStep(onTime, .easeOut(duration: 0.45)) { flash = 2 }
             
-            // 3. Deal the 3 tips
+            // 3. Deal the 3 tips (1.5s each)
             for k in 0..<3 {
+                let base = 1.62 + Double(k) * 1.5
+                onTime = await clock.wait(until: base)
                 if Task.isCancelled { return }
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { tipIndex = k }
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                sceneStep(onTime, .spring(response: 0.4, dampingFraction: 0.85)) { tipIndex = k }
+                if onTime { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
                 
-                try? await Task.sleep(nanoseconds: 300_000_000)
-                withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) { _ = visualsOn.insert(k) }
+                onTime = await clock.wait(until: base + 0.3)
+                sceneStep(onTime, .spring(response: 0.5, dampingFraction: 0.7)) { _ = visualsOn.insert(k) }
                 
-                try? await Task.sleep(nanoseconds: 450_000_000)
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) { _ = tagsOn.insert(k) }
-                
-                try? await Task.sleep(nanoseconds: 750_000_000)
+                onTime = await clock.wait(until: base + 0.75)
+                sceneStep(onTime, .spring(response: 0.35, dampingFraction: 0.6)) { _ = tagsOn.insert(k) }
             }
-            if Task.isCancelled { return }
             
             // 4. Summary + confetti (stays on screen)
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+            onTime = await clock.wait(until: 6.12)
+            if Task.isCancelled { return }
+            sceneStep(onTime, .spring(response: 0.45, dampingFraction: 0.8)) {
                 tipIndex = nil
                 showSummary = true
             }
-            confettiOn = true
+            confettiOn = onTime
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             for i in 0..<3 {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.8).delay(0.15 + 0.12 * Double(i))) {
+                sceneStep(onTime, .spring(response: 0.4, dampingFraction: 0.8).delay(0.15 + 0.12 * Double(i))) {
                     rowsOn[i] = true
                 }
             }
-            withAnimation(.easeOut(duration: 0.3).delay(0.5)) { badgeOn = true }
+            sceneStep(onTime, .easeOut(duration: 0.3).delay(0.5)) { badgeOn = true }
         }
     }
     
@@ -1088,6 +1137,12 @@ struct RoadmapView: View {
                     .stroke(Color.white.opacity(0.25),
                             style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [6, 8]))
                 
+                // Glow under the lit road (a wide faint stroke is much cheaper than a moving shadow)
+                RoadShape(points: points)
+                    .trim(from: 0, to: progress)
+                    .stroke(glowStart.opacity(0.35),
+                            style: StrokeStyle(lineWidth: 18, lineCap: .round, lineJoin: .round))
+                
                 // The lit part of the road
                 RoadShape(points: points)
                     .trim(from: 0, to: progress)
@@ -1095,13 +1150,14 @@ struct RoadmapView: View {
                         LinearGradient(colors: [glowStart, glowEnd], startPoint: .bottom, endPoint: .top),
                         style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round)
                     )
-                    .shadow(color: glowStart.opacity(0.9), radius: 8)
                 
-                // The moving light
+                // The moving light, with a soft halo
+                RoadHead(progress: progress, points: points, radius: 20)
+                    .fill(glowEnd.opacity(0.35))
+                RoadHead(progress: progress, points: points, radius: 13)
+                    .fill(Color.white.opacity(0.5))
                 RoadHead(progress: progress, points: points)
                     .fill(Color.white)
-                    .shadow(color: .white, radius: 8)
-                    .shadow(color: glowEnd, radius: 16)
                 
                 // Milestone dots and labels
                 ForEach(milestones.indices, id: \.self) { i in
@@ -1190,27 +1246,28 @@ struct RoadmapView: View {
             return
         }
         
-        // Start as the first title line lands
-        try? await Task.sleep(nanoseconds: 200_000_000)
+        let clock = SceneClock()
         
+        // Start as the first title line lands. Each stop: 0.6s drive, then light up.
+        // A longer pause at 1K so "Monetize" sinks in.
+        var at = 0.2
         for i in 1..<milestones.count {
+            var onTime = await clock.wait(until: at)
             if Task.isCancelled { return }
-            
-            withAnimation(.easeInOut(duration: 0.6)) {
+            sceneStep(onTime, .easeInOut(duration: 0.6)) {
                 progress = stops[i]
             }
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            if Task.isCancelled { return }
             
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
+            onTime = await clock.wait(until: at + 0.6)
+            if Task.isCancelled { return }
+            sceneStep(onTime, .spring(response: 0.35, dampingFraction: 0.6)) {
                 litCount = i + 1
             }
-            let big = (i == 1 || i == milestones.count - 1)
-            UIImpactFeedbackGenerator(style: big ? .medium : .light).impactOccurred()
-            
-            // Pause a bit longer at 1K so "Monetize" sinks in
-            let pause: UInt64 = (i == 1) ? 500_000_000 : 150_000_000
-            try? await Task.sleep(nanoseconds: pause)
+            if onTime {
+                let big = (i == 1 || i == milestones.count - 1)
+                UIImpactFeedbackGenerator(style: big ? .medium : .light).impactOccurred()
+            }
+            at += 0.6 + ((i == 1) ? 0.5 : 0.15)
         }
     }
 }
@@ -1363,6 +1420,7 @@ struct RoadShape: Shape {
 struct RoadHead: Shape {
     var progress: CGFloat
     let points: [CGPoint]
+    var radius: CGFloat = 9
     
     var animatableData: CGFloat {
         get { progress }
@@ -1373,7 +1431,7 @@ struct RoadHead: Shape {
         guard progress > 0.001 else { return Path() }
         let road = RoadShape.road(in: rect.size, points: points)
         guard let p = road.trimmedPath(from: 0, to: min(progress, 1)).currentPoint else { return Path() }
-        return Path(ellipseIn: CGRect(x: p.x - 9, y: p.y - 9, width: 18, height: 18))
+        return Path(ellipseIn: CGRect(x: p.x - radius, y: p.y - radius, width: radius * 2, height: radius * 2))
     }
 }
 
