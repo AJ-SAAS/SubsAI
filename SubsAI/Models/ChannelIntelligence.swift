@@ -185,26 +185,9 @@ struct WinningPattern: Identifiable {
             }
         }
 
-        // Pattern 4: best posting day (by views, 2+ videos per day)
-        let calendar = Calendar.current
-        let dayGroups = Dictionary(grouping: enriched) { calendar.component(.weekday, from: $0.publishedAt) }
-        let allAvgViews = enriched.map { Double($0.views) }.reduce(0, +) / Double(enriched.count)
-        var bestDay: (name: String, avg: Double)?
-        for (day, dayVideos) in dayGroups where dayVideos.count >= 2 {
-            let avg = dayVideos.map { Double($0.views) }.reduce(0, +) / Double(dayVideos.count)
-            if avg > allAvgViews * 1.3, avg > (bestDay?.avg ?? 0) {
-                bestDay = (calendar.weekdaySymbols[day - 1], avg)
-            }
-        }
-        if let best = bestDay {
-            patterns.append(WinningPattern(
-                title: "\(best.name) is your best posting day",
-                description: "Videos posted on \(best.name) get more views than your average.",
-                liftText: String(format: "+%.0f%% views", (best.avg / allAvgViews - 1) * 100),
-                liftIsPositive: true,
-                icon: "calendar"
-            ))
-        }
+        // Best posting day is NOT a pattern here. It has its own card ("When should you post?"),
+        // worked out in one place (CoachViewModel.analyzePostingTimes) so the app never
+        // shows two different "best days".
 
         return patterns
     }

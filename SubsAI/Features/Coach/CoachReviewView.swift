@@ -49,6 +49,22 @@ struct CoachReviewView: View {
 
     @State private var showPaywall = false
     @State private var dailyViews: [Double]? = nil
+    @State private var dailyMinutes: [Double] = []
+    @State private var dailySubs: [Double] = []
+    @State private var ctrHistory = YouTubeService.CTRHistory()
+    @State private var loadingStep = 0
+
+    /// What the "Checking this video" card says while the numbers load (last one stays)
+    private var loadingSteps: [String] {
+        var steps = ["Getting the numbers from YouTube…"]
+        if !video.isShort { steps.append("Checking how many people clicked…") }
+        steps += [
+            "Finding where people stopped watching…",
+            "Comparing it to your other videos…",
+            "Picking the one fix that helps most…"
+        ]
+        return steps
+    }
     @State private var insights: VideoInsights? = nil
     @State private var hookBaseline: HookBaseline? = nil
     @State private var insightsLoaded = false
@@ -73,6 +89,9 @@ struct CoachReviewView: View {
                     nextFixCard
                     deepAnalysisButton
                     viewsCard
+                    watchTimeCard
+                    if !video.isShort { ctrCard }
+                    subscribersCard
                     compareCard
                     workingCard
                     if isFreePreview { upgradeCard }
@@ -106,13 +125,20 @@ struct CoachReviewView: View {
                 .filter { $0.videoId != video.videoId && $0.isSameFormat(as: video) }
                 .sorted { $0.publishedAt > $1.publishedAt }
 
-            async let daily = YouTubeService.shared.fetchVideoDailyViews(videoId: video.videoId, publishedAt: video.publishedAt)
+            async let daily = YouTubeService.shared.fetchVideoDaily(videoId: video.videoId, publishedAt: video.publishedAt)
             async let loadedInsights = YouTubeService.shared.fetchVideoInsights(videoId: video.videoId, publishedAt: video.publishedAt)
             async let baseline = YouTubeService.shared.fetchHookBaseline(recentVideos: recent)
 
-            dailyViews = await daily
+            let numbers = await daily
+            dailyViews = numbers.views
+            dailyMinutes = numbers.minutes
+            dailySubs = numbers.subs
+            // Shorts have no thumbnail CTR (people swipe to them)
+            if !video.isShort {
+                ctrHistory = YouTubeService.shared.thumbnailCTRHistory(videoId: video.videoId)
+            }
             var loaded = await loadedInsights
-            loaded?.isShort = video.isShort
+            loaded.isShort = video.isShort
             insights = loaded
             hookBaseline = await baseline
             withAnimation(.easeOut(duration: 0.25)) { insightsLoaded = true }
@@ -167,13 +193,30 @@ struct CoachReviewView: View {
                     .font(.system(size: 11, weight: .bold))
                     .kerning(1.2)
                     .foregroundColor(HomeLook.purple)
-                HStack(spacing: 10) {
-                    ProgressView()
-                    Text("Finding what's holding this video back...")
-                        .font(.system(size: 15))
-                        .foregroundColor(HomeLook.secondary)
+                HStack(spacing: 14) {
+                    ThinkingSpark(size: 30)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Checking this video")
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundColor(HomeLook.ink)
+                        Text(loadingSteps[loadingStep % loadingSteps.count])
+                            .font(.system(size: 14))
+                            .foregroundColor(HomeLook.secondary)
+                            .id(loadingStep)
+                            .transition(.opacity)
+                    }
                 }
-                .padding(.vertical, 12)
+                .padding(.vertical, 10)
+                .task {
+                    // A new line every 1.6s, so people can see it's working
+                    while !Task.isCancelled && !insightsLoaded {
+                        try? await Task.sleep(nanoseconds: 1_600_000_000)
+                        guard !Task.isCancelled, !insightsLoaded else { return }
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            loadingStep = min(loadingStep + 1, loadingSteps.count - 1)
+                        }
+                    }
+                }
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -325,15 +368,16 @@ struct CoachReviewView: View {
 
     private func tryThisBox(_ c: DiagnosisContent) -> some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Black box with a gold label, so the action stands out on the white card
             Text("TRY THIS")
-                .font(.system(size: 11, weight: .bold))
-                .kerning(1.0)
-                .foregroundColor(HomeLook.ink)
+                .font(.system(size: 12, weight: .heavy))
+                .kerning(1.2)
+                .foregroundStyle(ReviewLook.gold)
 
             if let intro = c.actionIntro {
                 Text(intro)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(HomeLook.ink)
+                    .foregroundColor(.white)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -342,11 +386,11 @@ struct CoachReviewView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("1. Thumbnail file name")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(HomeLook.ink)
+                            .foregroundColor(.white)
                         if let file = c.seoFileName {
                             Text(file)
                                 .font(.system(size: 12, design: .monospaced))
-                                .foregroundColor(HomeLook.secondary)
+                                .foregroundColor(.white.opacity(0.65))
                                 .textSelection(.enabled)
                         }
                     }
@@ -360,19 +404,19 @@ struct CoachReviewView: View {
             if let action = c.actionText {
                 Text(action)
                     .font(.system(size: 15))
-                    .foregroundColor(HomeLook.ink)
+                    .foregroundColor(.white)
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(HomeLook.fill))
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(HomeLook.ink))
     }
 
     private func seoLine(_ bold: String, _ rest: String) -> some View {
-        (Text(bold).font(.system(size: 14, weight: .semibold)).foregroundColor(HomeLook.ink)
-         + Text(" " + rest).font(.system(size: 14)).foregroundColor(HomeLook.secondary))
+        (Text(bold).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+         + Text(" " + rest).font(.system(size: 14)).foregroundColor(.white.opacity(0.65)))
             .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -561,6 +605,173 @@ struct CoachReviewView: View {
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(PremiumWhiteCard())
+    }
+
+    // MARK: - Watch time, thumbnail CTR, new subscribers (same style as Views)
+
+    private var watchTimeCard: some View {
+        let totalHours = Double(video.views) * Double(video.averageViewDuration) / 3600
+        let lately = dailyMinutes.suffix(7)
+        let perDayMinutes = lately.isEmpty ? 0 : lately.reduce(0, +) / Double(lately.count)
+        return trendCard(
+            label: "WATCH TIME",
+            value: Self.hoursText(totalHours),
+            detail: perDayMinutes > 0 ? "All time · about \(Self.minutesText(perDayMinutes)) a day lately" : "All time",
+            series: smoothed(dailyMinutes),
+            upIsGood: true,
+            emptyText: "No watch time in the last 90 days."
+        )
+    }
+
+    /// "Sep 1 to Sep 27" (the days YouTube gave us CTR for)
+    private var ctrWindowText: String? {
+        guard let first = ctrHistory.firstDay, let last = ctrHistory.lastDay else { return nil }
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return "\(f.string(from: first)) to \(f.string(from: last))"
+    }
+
+    private var ctrStartText: String? {
+        guard let first = ctrHistory.firstDay else { return nil }
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return f.string(from: first)
+    }
+
+    private var ctrCard: some View {
+        let impressions = ctrHistory.impressions
+        let enough = impressions >= YouTubeService.minCTRImpressions
+        let ctr = ctrHistory.ctr
+        let window = ctrWindowText.map { " (\($0))" } ?? ""
+
+        var value = "Not yet"
+        var detail = "YouTube starts sharing CTR 1 to 2 days after you connect. It shows up here on its own."
+        if enough {
+            value = String(format: "%.1f%%", ctr * 100)
+            detail = "Last 28 days\(window) · \(Int(impressions).formatted()) impressions. Same as YouTube Studio's default view."
+        } else if impressions > 0 {
+            value = "Too early"
+            detail = "Only \(Int(impressions).formatted()) people saw the thumbnail in the last 28 days. We need about 100 to judge it fairly."
+        }
+
+        return trendCard(
+            label: "THUMBNAIL CTR",
+            value: value,
+            detail: detail,
+            series: enough ? ctrHistory.series : [],
+            upIsGood: true,
+            emptyText: nil,
+            leftLabel: ctrStartText,
+            extra: enough ? AnyView(CTRGauge(ctr: ctr)) : nil
+        )
+    }
+
+    private var subscribersCard: some View {
+        let gained = stats?.subscribersGained ?? 0
+        let per1K = video.views > 0 ? Double(gained) / Double(video.views) * 1000 : 0
+        return trendCard(
+            label: "NEW SUBSCRIBERS",
+            value: gained > 0 ? "+\(gained.formatted())" : "0",
+            detail: video.views >= 1_000
+                ? "All time · \(String(format: "%.1f", per1K)) for every 1K views"
+                : "All time",
+            series: smoothed(dailySubs),
+            upIsGood: true,
+            emptyText: "No new subscribers from this video in the last 90 days."
+        )
+    }
+
+    /// One metric: big number, one line under it, and a 7-day average line chart.
+    private func trendCard(label: String, value: String, detail: String, series: [Double],
+                           upIsGood: Bool, emptyText: String?, leftLabel: String? = nil,
+                           extra: AnyView? = nil) -> some View {
+        let trend = seriesTrend(series, upIsGood: upIsGood)
+        let hasChart = series.count >= 7 && series.contains(where: { $0 > 0 })
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                sectionLabel(label)
+                Spacer()
+                if let trend, hasChart {
+                    HStack(spacing: 3) {
+                        Image(systemName: trend.icon).font(.system(size: 11, weight: .bold))
+                        Text(trend.text).font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundColor(trend.color)
+                }
+            }
+
+            Text(value)
+                .font(.system(size: 34, weight: .bold))
+                .kerning(-1)
+                .foregroundColor(HomeLook.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+
+            Text(detail)
+                .font(.system(size: 13))
+                .foregroundColor(HomeLook.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let extra {
+                extra.padding(.top, 10)
+            }
+
+            if hasChart {
+                ReviewTrendChart(values: series, color: trend?.isBad == true ? ReviewLook.bad : ReviewLook.good)
+                    .frame(height: 72)
+                    .padding(.top, 8)
+                HStack {
+                    Text(leftLabel ?? windowLabel)
+                    Spacer()
+                    Text("7-day average")
+                    Spacer()
+                    Text("Today")
+                }
+                .font(.system(size: 11))
+                .foregroundColor(Color(white: 0.6))
+            } else if dailyViews == nil {
+                HStack { Spacer(); ProgressView(); Spacer() }
+                    .frame(height: 72)
+            } else if let emptyText, !series.isEmpty {
+                Text(emptyText)
+                    .font(.system(size: 13))
+                    .foregroundColor(HomeLook.secondary)
+                    .padding(.top, 4)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(PremiumWhiteCard())
+    }
+
+    /// Compares the first third of the line with the last third
+    private func seriesTrend(_ values: [Double], upIsGood: Bool) -> (text: String, icon: String, color: Color, isBad: Bool)? {
+        guard values.count >= 14 else { return nil }
+        let k = max(values.count / 3, 1)
+        let first = values.prefix(k).reduce(0, +) / Double(k)
+        let last = values.suffix(k).reduce(0, +) / Double(k)
+        guard first > 0 || last > 0 else { return nil }
+        let change = first > 0 ? (last - first) / first : 1
+        if change >= 0.10 {
+            return ("Going up", "arrow.up", upIsGood ? ReviewLook.goodText : ReviewLook.badText, !upIsGood)
+        }
+        if change <= -0.10 {
+            return ("Going down", "arrow.down", upIsGood ? ReviewLook.badText : ReviewLook.goodText, upIsGood)
+        }
+        return ("Steady", "arrow.right", HomeLook.secondary, false)
+    }
+
+    private static func hoursText(_ hours: Double) -> String {
+        if hours <= 0 { return "0 hours" }
+        if hours < 1 { return "\(Int((hours * 60).rounded())) min" }
+        if hours < 100 { return String(format: "%.1f hours", hours) }
+        return "\(Int(hours.rounded()).formatted()) hours"
+    }
+
+    private static func minutesText(_ minutes: Double) -> String {
+        if minutes < 60 { return "\(Int(minutes.rounded())) min" }
+        return String(format: "%.1f hours", minutes / 60)
     }
 
     private var windowLabel: String {
@@ -804,8 +1015,122 @@ struct CoachReviewView: View {
 struct PremiumWhiteCard: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color.white))
-            .shadow(color: .black.opacity(0.35), radius: 16, x: 0, y: 12)
+            // Shadow sits on the card shape only. On the whole view it also
+            // lands behind every bar and line inside the card.
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(Color.white)
+                    .shadow(color: .black.opacity(0.35), radius: 16, x: 0, y: 12)
+            )
+    }
+}
+
+// MARK: - Thinking spark (loading)
+// A purple starburst whose rays grow and shrink while it slowly turns.
+
+struct ThinkingSpark: View {
+    var size: CGFloat = 28
+    var color: Color = HomeLook.purple
+
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            let t: Double = timeline.date.timeIntervalSinceReferenceDate
+            Canvas { context, canvasSize in
+                let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
+                let radius: Double = Double(canvasSize.width) / 2
+                let rayCount = 10
+                for i in 0..<rayCount {
+                    let index = Double(i)
+                    let angle: Double = index / Double(rayCount) * 2 * .pi + t * 0.8
+                    let wave: Double = 0.5 + 0.5 * sin(t * 3.2 + index * 1.7)
+                    let length: Double = radius * (0.55 + 0.45 * wave)
+                    let inner: Double = radius * 0.16
+                    let dx: Double = cos(angle)
+                    let dy: Double = sin(angle)
+                    var ray = Path()
+                    ray.move(to: CGPoint(x: center.x + dx * inner, y: center.y + dy * inner))
+                    ray.addLine(to: CGPoint(x: center.x + dx * length, y: center.y + dy * length))
+                    context.stroke(ray, with: .color(color),
+                                   style: StrokeStyle(lineWidth: canvasSize.width * 0.12, lineCap: .round))
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityLabel("Loading")
+    }
+}
+
+// MARK: - CTR gauge (1% to 20%+, yellow to green, 7% target)
+
+struct CTRGauge: View {
+    let ctr: Double   // 0...1
+
+    private static let low = 0.01, high = 0.20, target = 0.07
+    private static let yellow = Color(red: 0.96, green: 0.76, blue: 0.20)   // #F5C233
+    private static let lime   = Color(red: 0.62, green: 0.80, blue: 0.25)   // #9ECC40
+    private static let green  = Color(red: 0.122, green: 0.659, blue: 0.400) // #1FA866
+
+    /// Where a CTR sits on the bar, 0...1
+    private static func spot(_ value: Double) -> CGFloat {
+        CGFloat((min(max(value, low), high) - low) / (high - low))
+    }
+
+    private var isGood: Bool { ctr >= Self.target }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GeometryReader { g in
+                let w = g.size.width
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(LinearGradient(colors: [Self.yellow, Self.lime, Self.green],
+                                             startPoint: .leading, endPoint: .trailing))
+                        .frame(height: 10)
+
+                    // 7% target line
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(HomeLook.ink)
+                        .frame(width: 2, height: 20)
+                        .offset(x: w * Self.spot(Self.target) - 1)
+
+                    // This video
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 20, height: 20)
+                        .overlay(Circle().stroke(HomeLook.ink, lineWidth: 3))
+                        .offset(x: min(max(w * Self.spot(ctr) - 10, 0), w - 20))
+                }
+                .frame(height: 20)
+            }
+            .frame(height: 20)
+
+            GeometryReader { g in
+                let w = g.size.width
+                ZStack(alignment: .topLeading) {
+                    Text("1%")
+                    Text("7% goal")
+                        .fontWeight(.bold)
+                        .foregroundColor(HomeLook.ink)
+                        .fixedSize()
+                        .offset(x: w * Self.spot(Self.target) - 22)
+                    Text("20%+")
+                        .frame(width: w, alignment: .trailing)
+                }
+                .font(.system(size: 11))
+                .foregroundColor(HomeLook.secondary)
+            }
+            .frame(height: 14)
+
+            Text(isGood
+                 ? "Nice. Aim for 7% or more, and this video is there."
+                 : "Aim for 7% or more. Below 7% usually means the title or thumbnail needs work.")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(isGood ? ReviewLook.goodText : ReviewLook.badText)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(format: "Thumbnail CTR %.1f percent. The goal is 7 percent or more.", ctr * 100))
     }
 }
 

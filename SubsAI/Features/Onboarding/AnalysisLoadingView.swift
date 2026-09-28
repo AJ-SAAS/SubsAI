@@ -1,13 +1,19 @@
 import SwiftUI
 
 // =============================================================
-// MARK: - ANALYSIS LOADING
+// MARK: - FIRST LOOK (after connecting a channel)
 // Shows ONCE, right after someone connects their channel.
+//
+// What a struggling creator wants to hear here:
+//   1. "You really looked at MY channel"   -> their picture, name, real numbers
+//   2. "It's not hopeless"                 -> their own best video as proof
+//   3. "I know what to do next"            -> "Your first fix is ready"
+//
 // It loads the real channel while it plays, so the paywall that
 // follows already knows their name and sub count.
-//
-// Signed-in users who have already seen it skip it on every
-// later launch (it calls onComplete right away).
+// Signed-in users who have already seen it skip it on every later launch.
+// Uses HomeLook (DashboardView), ThinkingSpark (CoachReviewView),
+// SceneClock + Haptics (WelcomeView).
 // =============================================================
 
 struct AnalysisLoadingView: View {
@@ -20,16 +26,10 @@ struct AnalysisLoadingView: View {
 
     @State private var skip: Bool
     @State private var channel: Channel?
-    @State private var stepIndex = 0
-    @State private var progress: Double = 0
+    @State private var best: YouTubeService.BestVideo?
+    @State private var shownSteps = 0         // how many checklist rows are on screen
+    @State private var doneSteps = 0          // how many checklist rows are ticked
     @State private var isDone = false
-    @State private var pulsing = false
-
-    private let steps = [
-        "Loading your videos",
-        "Finding what works",
-        "Building your plan"
-    ]
 
     /// Call on sign out, disconnect, or leaving demo mode, so the next
     /// channel connected sees this screen again.
@@ -46,16 +46,14 @@ struct AnalysisLoadingView: View {
 
     var body: some View {
         ZStack {
-            // Same purple gradient as Dashboard + Intelligence
-            LinearGradient(
-                colors: [
-                    AppTheme.accent.opacity(0.65),
-                    AppTheme.accent.opacity(0.30),
-                    AppTheme.accent.opacity(0.08),
-                    Color.black.opacity(0.98)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
+            HomeLook.ink.ignoresSafeArea()
+
+            // Soft purple light from the top, like the app's header
+            RadialGradient(
+                colors: [HomeLook.purple.opacity(0.55), .clear],
+                center: .top,
+                startRadius: 0,
+                endRadius: 460
             )
             .ignoresSafeArea()
 
@@ -63,62 +61,30 @@ struct AnalysisLoadingView: View {
                 content
             }
         }
+        .preferredColorScheme(.dark)
         .task { await run() }
     }
 
     private var content: some View {
         VStack(spacing: 0) {
+            Spacer(minLength: 20)
 
-            Spacer()
+            avatarBlock
+                .padding(.bottom, 26)
 
-            // Icon: their channel picture once it loads
-            ZStack {
-                Circle()
-                    .fill(AppTheme.accent.opacity(0.08))
-                    .frame(width: 150, height: 150)
-                    .scaleEffect(pulsing ? 1.12 : 0.95)
-
-                Circle()
-                    .fill(AppTheme.accent.opacity(0.15))
-                    .frame(width: 114, height: 114)
-                    .scaleEffect(pulsing ? 1.07 : 0.97)
-
-                avatar
-                    .frame(width: 84, height: 84)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(AppTheme.accent.opacity(0.6), lineWidth: 1.5))
-
-                if isDone {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundColor(.green)
-                        .background(Circle().fill(Color.white).frame(width: 20, height: 20))
-                        .offset(x: 32, y: 32)
-                        .transition(.scale.combined(with: .opacity))
-                }
-            }
-            .animation(
-                reduceMotion ? nil : .easeInOut(duration: 2).repeatForever(autoreverses: true),
-                value: pulsing
-            )
-            .padding(.bottom, 26)
-
-            // Headline
-            Text(isDone ? "Your growth plan is ready" : "Building your growth plan")
-                .font(.system(size: 28, weight: .heavy, design: .rounded))
+            Text(isDone ? "Good news. Your channel can grow." : "Getting to know your channel")
+                .font(.system(size: 27, weight: .bold))
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 28)
                 .id(isDone)
                 .transition(.opacity)
 
-            // Their channel, so they know it's really theirs
             if let line = channelLine {
                 Text(line)
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    .foregroundColor(.white.opacity(0.8))
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.white.opacity(0.65))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                     .padding(.horizontal, 28)
@@ -126,74 +92,75 @@ struct AnalysisLoadingView: View {
                     .transition(.opacity)
             }
 
-            // Progress + one short status line
-            VStack(spacing: 12) {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.white.opacity(0.1))
-                        Capsule()
-                            .fill(LinearGradient(
-                                colors: [Color(red: 0.357, green: 0.129, blue: 0.647), AppTheme.accent],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            ))
-                            .frame(width: geo.size.width * progress)
-                    }
-                }
-                .frame(height: 6)
+            checklist
+                .padding(.horizontal, 24)
+                .padding(.top, 28)
 
-                HStack(spacing: 8) {
-                    if isDone {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 13, weight: .bold))
-                    } else {
-                        ProgressView()
-                            .tint(.white)
-                            .scaleEffect(0.75)
-                    }
-                    Text(isDone ? "All done" : steps[stepIndex])
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .id(stepIndex)
-                        .transition(.opacity)
-                }
-                .foregroundColor(.white.opacity(0.7))
-                .frame(height: 20)
+            if isDone {
+                Text(reassurance)
+                    .font(.system(size: 16))
+                    .foregroundColor(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 32)
+                    .padding(.top, 22)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
-            .padding(.horizontal, 48)
-            .padding(.top, 32)
 
-            Spacer()
+            Spacer(minLength: 20)
 
-            // Button (only when done)
             Button(action: finish) {
-                Text("See My Plan")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                Text("Show me my first fix")
+                    .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 58)
                     .background(
-                        LinearGradient(
-                            colors: [Color(red: 0.357, green: 0.129, blue: 0.647), AppTheme.accent],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(LinearGradient(colors: [HomeLook.purpleLight, HomeLook.purple],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
                     )
-                    .cornerRadius(16)
-                    .shadow(color: AppTheme.accent.opacity(0.45), radius: 14, x: 0, y: 6)
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 44)
+            .padding(.bottom, 40)
             .opacity(isDone ? 1 : 0)
             .disabled(!isDone)
         }
     }
 
-    // MARK: - Pieces
+    // MARK: - Their picture, with the purple spark working behind it
+
+    private var avatarBlock: some View {
+        ZStack {
+            if !isDone && !reduceMotion {
+                ThinkingSpark(size: 150, color: HomeLook.purpleLight.opacity(0.55))
+                    .transition(.opacity)
+            }
+            Circle()
+                .stroke(isDone ? HomeLook.purpleLight : Color.white.opacity(0.15), lineWidth: 3)
+                .frame(width: 98, height: 98)
+
+            avatar
+                .frame(width: 86, height: 86)
+                .clipShape(Circle())
+
+            if isDone {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundColor(.white)
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(HomeLook.purple))
+                    .overlay(Circle().stroke(HomeLook.ink, lineWidth: 3))
+                    .offset(x: 34, y: 34)
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .frame(width: 150, height: 150)
+    }
 
     @ViewBuilder
     private var avatar: some View {
-        if let urlString = channel?.profilePicURL, let url = URL(string: urlString), !urlString.isEmpty {
+        if let urlString = channel?.profilePicURL, !urlString.isEmpty, let url = URL(string: urlString) {
             AsyncImage(url: url) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
@@ -206,11 +173,106 @@ struct AnalysisLoadingView: View {
 
     private var iconFallback: some View {
         ZStack {
-            AppTheme.accent.opacity(0.3)
-            Image(systemName: "chart.bar.fill")
-                .font(.system(size: 30, weight: .bold))
-                .foregroundColor(.white)
+            Color.white.opacity(0.08)
+            Image(systemName: "play.rectangle.fill")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundColor(.white.opacity(0.8))
         }
+    }
+
+    // MARK: - Checklist (real numbers, ticked one by one)
+
+    private struct Step: Identifiable {
+        let id: Int
+        let text: String
+    }
+
+    /// While a row is working it says what it's doing. When it ticks, it shows what we found.
+    private var steps: [Step] {
+        var list: [Step] = []
+
+        let videos = channel?.videoCount ?? 0
+        if doneSteps < 1 {
+            list.append(Step(id: 0, text: "Finding your videos…"))
+        } else {
+            list.append(Step(id: 0, text: videos > 0 ? "Found your \(videos.formatted()) videos" : "Found your channel"))
+        }
+
+        let views = channel?.totalViews ?? 0
+        if doneSteps < 2 {
+            list.append(Step(id: 1, text: "Adding up your views…"))
+        } else {
+            list.append(Step(id: 1, text: views > 0 ? "\(Self.short(views)) views so far" : "Read your views and watch time"))
+        }
+
+        if doneSteps < 3 {
+            list.append(Step(id: 2, text: "Finding your best video…"))
+        } else if let best, best.views > 0 {
+            let title = best.title.isEmpty ? "" : "\"\(best.title)\" · "
+            list.append(Step(id: 2, text: "Best video: \(title)\(Self.short(best.views)) views"))
+        } else {
+            list.append(Step(id: 2, text: "Checked your best videos"))
+        }
+
+        list.append(Step(id: 3, text: doneSteps < 4 ? "Picking your first fix…" : "Your first fix is ready"))
+        return list
+    }
+
+    private var checklist: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // Findings show up one at a time: appear, work for a moment, then tick
+            ForEach(steps.filter { $0.id < shownSteps }) { step in
+                HStack(spacing: 12) {
+                    stepIcon(step.id)
+                    Text(step.text)
+                        .font(.system(size: 15, weight: step.id < doneSteps ? .semibold : .regular))
+                        .foregroundColor(step.id < doneSteps ? .white : .white.opacity(0.6))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(18)
+        .opacity(shownSteps > 0 ? 1 : 0)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private func stepIcon(_ index: Int) -> some View {
+        if index < doneSteps {
+            Image(systemName: "checkmark")
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundColor(.white)
+                .frame(width: 22, height: 22)
+                .background(Circle().fill(HomeLook.purple))
+                .transition(.scale.combined(with: .opacity))
+        } else if index == doneSteps && !reduceMotion {
+            ThinkingSpark(size: 22, color: HomeLook.purpleLight)
+        } else {
+            Circle()
+                .stroke(Color.white.opacity(0.25), lineWidth: 2)
+                .frame(width: 22, height: 22)
+        }
+    }
+
+    // MARK: - Words
+
+    /// Proof from their own channel that growth is possible
+    private var reassurance: String {
+        if let best, best.views >= 100 {
+            return "Your best video got \(Self.short(best.views)) views. That proves people want what you make. Now let's do it again, one fix at a time."
+        }
+        return "Every big channel started small. We'll show you the one thing to fix first, then the next."
     }
 
     /// "TechGrowth Daily · 742 subs". Leaves out anything that isn't real.
@@ -222,11 +284,14 @@ struct AnalysisLoadingView: View {
         let subsKnown = channel.subscribersHidden == false
             || (channel.subscribersHidden == nil && channel.subscribers > 0)
         guard subsKnown else { return name }
+        return "\(name) · \(channel.subscribers.formatted()) subs"
+    }
 
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        let subs = formatter.string(from: NSNumber(value: channel.subscribers)) ?? "\(channel.subscribers)"
-        return "\(name) · \(subs) subs"
+    private static func short(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 10_000    { return String(format: "%.0fK", Double(n) / 1_000) }
+        if n >= 1_000     { return String(format: "%.1fK", Double(n) / 1_000) }
+        return n.formatted()
     }
 
     // MARK: - Logic
@@ -239,42 +304,72 @@ struct AnalysisLoadingView: View {
             return
         }
 
-        if !reduceMotion { pulsing = true }
+        Haptics.warmUp()
 
-        let started = Date()
+        // Load both at once. Each row ticks when its data is in AND it has had its moment
+        // on screen, so it never flashes by, and never waits more than 8 seconds.
+        let channelTask = Task { await YouTubeService.shared.fetchChannel(timeout: 8) }
+        let bestTask = Task { await YouTubeService.shared.fetchBestVideo() }
+        let clock = SceneClock()
 
-        // Start loading the real channel right away
-        let loader = Task { await YouTubeService.shared.fetchChannel(timeout: 8) }
-
-        // Step 1
-        withAnimation(.easeInOut(duration: 0.6)) { progress = 0.25 }
-        try? await Task.sleep(nanoseconds: 1_100_000_000)
-
-        // Step 2
-        withAnimation(.easeInOut(duration: 0.3)) { stepIndex = 1 }
-        withAnimation(.easeInOut(duration: 0.6)) { progress = 0.55 }
-
-        // Show the channel as soon as it lands
-        let loaded = await loader.value
+        // About 8 seconds in all. Each finding: shows up, works ~1.4s, then ticks.
+        // Row 1: videos
+        await show(1, at: 0.6, clock: clock)
+        let loaded = await channelTask.value
         withAnimation(.easeOut(duration: 0.3)) { channel = loaded }
+        await tick(to: 1, at: 2.0, clock: clock)
 
-        let elapsed = Date().timeIntervalSince(started)
-        if elapsed < 2.2 {
-            try? await Task.sleep(nanoseconds: UInt64((2.2 - elapsed) * 1_000_000_000))
+        // Row 2: views
+        await show(2, at: 2.4, clock: clock)
+        await tick(to: 2, at: 3.8, clock: clock)
+
+        // Row 3: best video (gives up after 8s so nobody is stuck here)
+        await show(3, at: 4.2, clock: clock)
+        let found = await Self.firstOf(bestTask, orNilAfter: 8)
+        await tick(to: 3, at: 5.8, clock: clock, then: { best = found })
+
+        // Row 4: first fix
+        await show(4, at: 6.2, clock: clock)
+        await tick(to: 4, at: 7.6, clock: clock)
+
+        _ = await clock.wait(until: 8.2)
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) { isDone = true }
+        Haptics.success()
+    }
+
+    /// Puts the next finding on screen (still working)
+    private func show(_ count: Int, at seconds: Double, clock: SceneClock) async {
+        let onTime = await clock.wait(until: seconds)
+        guard !Task.isCancelled else { return }
+        sceneStep(onTime, .spring(response: 0.45, dampingFraction: 0.85)) {
+            shownSteps = count
         }
+    }
 
-        // Step 3
-        withAnimation(.easeInOut(duration: 0.3)) { stepIndex = 2 }
-        withAnimation(.easeInOut(duration: 0.6)) { progress = 0.85 }
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
-
-        // Done
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
-            progress = 1
-            isDone = true
-            pulsing = false
+    /// The task's result, or nil if it takes longer than `seconds`
+    private static func firstOf(_ task: Task<YouTubeService.BestVideo?, Never>,
+                                orNilAfter seconds: Double) async -> YouTubeService.BestVideo? {
+        await withTaskGroup(of: YouTubeService.BestVideo?.self) { group in
+            group.addTask { await task.value }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
         }
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    /// Ticks rows up to `count`, no earlier than `seconds` after the screen opened
+    private func tick(to count: Int, at seconds: Double, clock: SceneClock, then update: () -> Void = {}) async {
+        let onTime = await clock.wait(until: seconds)
+        guard !Task.isCancelled else { return }
+        sceneStep(onTime, .spring(response: 0.35, dampingFraction: 0.75)) {
+            update()
+            doneSteps = count
+        }
+        if onTime { Haptics.tap() }
     }
 
     private func finish() {

@@ -79,6 +79,7 @@ struct SettingsView: View {
                         .frame(maxWidth: .infinity)
                         .opacity(scrollY < -120 ? 1 : 0)
                         .animation(.easeOut(duration: 0.2), value: scrollY < -120)
+                        .allowsHitTesting(false)   // never blocks taps on the header
                 }
             }
             .ignoresSafeArea(edges: .top)
@@ -245,6 +246,7 @@ struct SettingsView: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(Color.white.opacity(0.14), lineWidth: 1)
         )
+        .compositingGroup()   // shadow on the card only, not on the text and bars inside
         .shadow(color: Color.black.opacity(0.28), radius: 16, x: 0, y: 10)
     }
 
@@ -301,6 +303,7 @@ struct SettingsView: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(Color.white.opacity(0.35), lineWidth: 1)
         )
+        .compositingGroup()   // shadow on the card only, not on the text and bars inside
         .shadow(color: Color(red: 0.89, green: 0.71, blue: 0.30).opacity(0.3), radius: 16, x: 0, y: 10)
         .accessibilityElement(children: .combine)
     }
@@ -349,7 +352,7 @@ struct SettingsView: View {
     private var supportGroup: some View {
         SettingsGroup(title: "Help") {
             SettingsRow(icon: "envelope", title: "Contact us") {
-                openURL("mailto:support@trysubsai.com")
+                openURL("mailto:ajay@ajaysharma.co")
             }
             RowDivider()
             SettingsRow(icon: "bubble.left", title: "Share feedback") {

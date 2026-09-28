@@ -21,6 +21,9 @@ final class YouTubeService {
     private var reachJobTask: Task<String?, Never>?
     /// Short / long / live per video, saved for this session
     private var formatCache: [String: VideoFormat] = [:]
+    /// CTR results, shared by every screen for 10 minutes (it was being fetched 6 times at launch)
+    private var thumbStatsTask: Task<[String: ThumbnailStats], Never>?
+    private var thumbStatsAt: Date?
     
     /// Call this when the user signs out, so the next account never sees the old channel.
     func clearCache() {
@@ -28,6 +31,8 @@ final class YouTubeService {
         curveCache = [:]
         durationCache = [:]
         formatCache = [:]
+        thumbStatsTask = nil
+        thumbStatsAt = nil
     }
     
     /// Loads the channel, or returns nil if it fails or takes longer than `seconds`.
@@ -471,6 +476,110 @@ final class YouTubeService {
         } catch {
             print("⚠️ Daily views failed:", error)
             return []
+        }
+    }
+
+    /// Day by day numbers for one video (oldest day first). Days with no data are left out by YouTube.
+    struct VideoDaily {
+        var views: [Double] = []
+        var minutes: [Double] = []   // watch time, in minutes
+        var subs: [Double] = []      // subscribers gained that day
+    }
+
+    /// Views, watch time and new subscribers per day, in one request.
+    func fetchVideoDaily(videoId: String, publishedAt: Date, days: Int = 90) async -> VideoDaily {
+        if AuthManager.shared.isDemoMode {
+            let views = await fetchVideoDailyViews(videoId: videoId, publishedAt: publishedAt, days: days)
+            var minutes: [Double] = []
+            var subs: [Double] = []
+            for (i, v) in views.enumerated() {
+                minutes.append(v * 3.4)
+                let bonus: Double = (i % 3 == 0) ? 1 : 0
+                subs.append((v / 60).rounded() + bonus)
+            }
+            return VideoDaily(views: views, minutes: minutes, subs: subs)
+        }
+
+        let calendar = Calendar.current
+        guard let windowStart = calendar.date(byAdding: .day, value: -days, to: Date()) else { return VideoDaily() }
+        let start = max(calendar.startOfDay(for: publishedAt), windowStart)
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+
+        var components = URLComponents(string: "https://youtubeanalytics.googleapis.com/v2/reports")!
+        components.queryItems = [
+            .init(name: "ids",        value: "channel==MINE"),
+            .init(name: "metrics",    value: "views,estimatedMinutesWatched,subscribersGained"),
+            .init(name: "dimensions", value: "day"),
+            .init(name: "sort",       value: "day"),
+            .init(name: "filters",    value: "video==\(videoId)"),
+            .init(name: "startDate",  value: formatter.string(from: start)),
+            .init(name: "endDate",    value: formatter.string(from: Date()))
+        ]
+
+        struct Response: Decodable { let rows: [[AnalyticsValue]]? }
+        do {
+            let token = try await AuthManager.shared.getValidToken()
+            let (data, _) = try await URLSession.shared.data(for: URLRequest(url: components.url!, bearerToken: token))
+            let rows = try JSONDecoder().decode(Response.self, from: data).rows ?? []
+            // Each row is [day, views, minutes, subs]
+            var result = VideoDaily()
+            for row in rows where row.count >= 4 {
+                result.views.append(row[1].doubleValue)
+                result.minutes.append(row[2].doubleValue)
+                result.subs.append(row[3].doubleValue)
+            }
+            return result
+        } catch {
+            print("⚠️ Daily video numbers failed:", error)
+            return VideoDaily()
+        }
+    }
+
+    // MARK: - Best video ever (for the first look after connecting)
+
+    struct BestVideo {
+        let id: String
+        let title: String
+        let views: Int
+    }
+
+    /// The channel's most viewed video, all time. Proof that people want what they make.
+    func fetchBestVideo() async -> BestVideo? {
+        if AuthManager.shared.isDemoMode {
+            guard let top = demoVideos().max(by: { $0.views < $1.views }) else { return nil }
+            return BestVideo(id: top.videoId, title: top.title, views: top.views)
+        }
+
+        let rows = await analyticsQuery([
+            .init(name: "metrics",    value: "views"),
+            .init(name: "dimensions", value: "video"),
+            .init(name: "sort",       value: "-views"),
+            .init(name: "maxResults", value: "1")
+        ], timeout: 10)
+        guard let row = rows.first, row.count >= 2, case .string(let id) = row[0] else { return nil }
+        let views = row[1].intValue
+
+        struct Response: Decodable {
+            struct Item: Decodable {
+                struct Snippet: Decodable { let title: String }
+                let snippet: Snippet
+            }
+            let items: [Item]
+        }
+        var components = URLComponents(string: "https://www.googleapis.com/youtube/v3/videos")!
+        components.queryItems = [.init(name: "part", value: "snippet"), .init(name: "id", value: id)]
+        do {
+            let token = try await AuthManager.shared.getValidToken()
+            var request = URLRequest(url: components.url!, bearerToken: token)
+            request.timeoutInterval = 10
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let title = try JSONDecoder().decode(Response.self, from: data).items.first?.snippet.title ?? ""
+            return BestVideo(id: id, title: title, views: views)
+        } catch {
+            return BestVideo(id: id, title: "", views: views)
         }
     }
 
@@ -973,6 +1082,19 @@ final class YouTubeService {
     /// Real thumbnail impressions + CTR for each video (all days we have added up).
     /// Returns an empty result until YouTube has made the first reports.
     func fetchThumbnailStats() async -> [String: ThumbnailStats] {
+        // Reuse the last result (or the one in progress) for 10 minutes
+        if let task = thumbStatsTask, let at = thumbStatsAt, Date().timeIntervalSince(at) < 600 {
+            return await task.value
+        }
+        let task = Task { await self.loadThumbnailStats() }
+        thumbStatsTask = task
+        thumbStatsAt = Date()
+        let result = await task.value
+        if result.isEmpty { thumbStatsTask = nil }   // nothing yet: try again next time
+        return result
+    }
+
+    private func loadThumbnailStats() async -> [String: ThumbnailStats] {
         if AuthManager.shared.isDemoMode {
             return Dictionary(uniqueKeysWithValues: mockVideos().map {
                 ($0.videoId, ThumbnailStats(impressions: Double($0.views) * 11, ctr: $0.thumbnailCTR))
@@ -984,6 +1106,7 @@ final class YouTubeService {
             let id: String
             let downloadUrl: String?
             let startTime: String?
+            let endTime: String?
             let createTime: String?
         }
         struct ReportList: Codable { let reports: [Report]?; let nextPageToken: String? }
@@ -997,7 +1120,11 @@ final class YouTubeService {
             repeat {
                 var components = URLComponents(string: "https://youtubereporting.googleapis.com/v1/jobs/\(jobId)/reports")!
                 if let pageToken { components.queryItems = [.init(name: "pageToken", value: pageToken)] }
-                let (data, _) = try await URLSession.shared.data(for: URLRequest(url: components.url!, bearerToken: token))
+                let (data, response) = try await URLSession.shared.data(for: URLRequest(url: components.url!, bearerToken: token))
+                if let code = (response as? HTTPURLResponse)?.statusCode, code != 200 {
+                    print("⚠️ Reach reports list failed (\(code)):", String(data: data, encoding: .utf8) ?? "")
+                    return [:]
+                }
                 let page = try JSONDecoder().decode(ReportList.self, from: data)
                 reports += page.reports ?? []
                 pageToken = page.nextPageToken
@@ -1020,30 +1147,109 @@ final class YouTubeService {
                 let (csv, _) = try await URLSession.shared.data(for: URLRequest(url: url, bearerToken: token))
                 var parsed = Self.parseReach(csv)
                 parsed.reportId = report.id
+                parsed.endTime = report.endTime
                 cache[day] = parsed
             }
             saveReachCache(cache)
+            let videosWithCTR = Set(cache.values.flatMap { $0.rows.keys }).count
+            print("📊 Reach: job \(jobId), \(reports.count) report files from YouTube, \(cache.count) days saved, CTR for \(videosWithCTR) videos")
+            for report in reports.prefix(10) {
+                let from: String = report.startTime ?? "?"
+                let to: String = report.endTime ?? "?"
+                print("📊 Reach file: \(from) to \(to)")
+            }
+            if reports.isEmpty {
+                print("📊 Reach: YouTube hasn't made the first report yet. This can take up to 48 hours after the job was created.")
+            }
 
-            // 3. Add up every day
-            // Docs call CTR a "percentage". If any value is above 1 it's 0-100, else 0-1.
-            let maxCTR = cache.values.map(\.maxCTR).max() ?? 0
-            let scale = maxCTR > 1 ? 100.0 : 1.0
-
-            var totals: [String: (impressions: Double, weighted: Double)] = [:]
-            for day in cache.values {
+            // 3. Add up the LAST 28 DAYS (same as YouTube Studio's default view)
+            let scale = Self.reachScale(cache)
+            var totals: [String: (impressions: Double, clicks: Double)] = [:]
+            for (key, day) in cache where Self.isInLast28Days(key) {
                 for (videoId, value) in day.rows {
                     let current = totals[videoId] ?? (0, 0)
-                    totals[videoId] = (current.impressions + value[0], current.weighted + value[1])
+                    totals[videoId] = (current.impressions + value[0], current.clicks + value[1] / scale)
                 }
             }
+            // Under 100 impressions, CTR swings too much to mean anything (1 click in 6 = 16.7%)
             return totals.compactMapValues { total in
-                guard total.impressions > 0 else { return nil }
-                return ThumbnailStats(impressions: total.impressions, ctr: total.weighted / total.impressions / scale)
+                guard total.impressions >= Self.minCTRImpressions else { return nil }
+                return ThumbnailStats(impressions: total.impressions, ctr: total.clicks / total.impressions)
             }
         } catch {
             print("⚠️ Thumbnail CTR fetch failed:", error)
             return [:]
         }
+    }
+
+    /// Thumbnail CTR for one video, from the saved reach reports.
+    /// YouTube only gives these for the days since SubsAI was connected (plus a short backfill),
+    /// so this is NOT the video's lifetime CTR. `firstDay`/`lastDay` say which days it covers.
+    struct CTRHistory {
+        var series: [Double] = []     // 7-day rolling CTR per day, oldest first
+        var firstDay: Date?
+        var lastDay: Date?
+        var days = 0
+        var impressions: Double = 0
+        var ctr: Double = 0           // clicks / impressions over all those days
+    }
+
+    func thumbnailCTRHistory(videoId: String) -> CTRHistory {
+        if AuthManager.shared.isDemoMode {
+            var demo: [Double] = []
+            for i in 0..<30 {
+                let day = Double(i)
+                let wave: Double = sin(day * 0.4) * 0.006
+                let climb: Double = day * 0.0003
+                demo.append(0.052 + wave + climb)
+            }
+            let first = Calendar.current.date(byAdding: .day, value: -30, to: Date())
+            return CTRHistory(series: demo, firstDay: first, lastDay: Date(), days: 30, impressions: 48_000, ctr: 0.058)
+        }
+
+        let cache = loadReachCache()
+        let scale = Self.reachScale(cache)
+        let iso = ISO8601DateFormatter()
+
+        // Keys are the report start times (ISO dates), so sorting them sorts by date.
+        // Only the last 28 days, same as YouTube Studio's default view.
+        var days: [(date: Date?, impressions: Double, clicks: Double)] = []
+        var lastEnd: Date?
+        for key in cache.keys.sorted() where Self.isInLast28Days(key) {
+            guard let day = cache[key], let row = day.rows[videoId], row[0] > 0 else { continue }
+            days.append((iso.date(from: key), row[0], row[1] / scale))
+            if let end = day.endTime.flatMap({ iso.date(from: $0) }) { lastEnd = end }
+        }
+
+        var history = CTRHistory()
+        history.days = days.count
+        history.firstDay = days.first?.date
+        history.lastDay = lastEnd ?? days.last?.date
+        var totalImpressions: Double = 0
+        var totalClicks: Double = 0
+        for day in days {
+            totalImpressions += day.impressions
+            totalClicks += day.clicks
+        }
+        history.impressions = totalImpressions
+        history.ctr = totalImpressions > 0 ? totalClicks / totalImpressions : 0
+        let fromText: String = history.firstDay.map { iso.string(from: $0) } ?? "-"
+        let toText: String = history.lastDay.map { iso.string(from: $0) } ?? "-"
+        let pctText: String = String(format: "%.2f", history.ctr * 100)
+        print("📊 CTR \(videoId): \(days.count) days, \(fromText) to \(toText), \(Int(totalImpressions)) impressions, \(pctText)%, scale \(Int(scale))")
+
+        if days.count >= 3 {
+            for i in days.indices {
+                var impressions: Double = 0
+                var clicks: Double = 0
+                for day in days[max(0, i - 6)...i] {
+                    impressions += day.impressions
+                    clicks += day.clicks
+                }
+                history.series.append(impressions > 0 ? clicks / impressions : 0)
+            }
+        }
+        return history
     }
 
     // MARK: Reach report parsing + cache
@@ -1052,6 +1258,20 @@ final class YouTubeService {
         var rows: [String: [Double]]   // videoId -> [impressions, impressions x raw CTR]
         var maxCTR: Double
         var reportId: String? = nil
+        var endTime: String? = nil     // when this report's data ends
+    }
+
+    /// Below this many impressions we don't show a CTR (too few people to judge)
+    static let minCTRImpressions: Double = 100
+
+    /// YouTube's CTR column is 0-1 or 0-100. If any value is over 1, it's 0-100.
+    private static func reachScale(_ cache: [String: ReachDay]) -> Double {
+        (cache.values.map(\.maxCTR).max() ?? 0) > 1 ? 100.0 : 1.0
+    }
+
+    private static func isInLast28Days(_ key: String) -> Bool {
+        guard let date = ISO8601DateFormatter().date(from: key) else { return true }
+        return date >= Date().addingTimeInterval(-28 * 24 * 3600)
     }
 
     private static func parseReach(_ data: Data) -> ReachDay {
@@ -1075,8 +1295,12 @@ final class YouTubeService {
         for line in lines {
             let columns = line.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
             guard columns.count > max(videoIndex, impressionsIndex, ctrIndex) else { continue }
-            let impressions = Double(columns[impressionsIndex]) ?? 0
-            let ctr = Double(columns[ctrIndex]) ?? 0
+            // A blank CTR means YouTube held it back (too few people). Skip the row,
+            // or its impressions would count as "0 clicks" and drag CTR down to 0%.
+            guard
+                let impressions = Double(columns[impressionsIndex]),
+                let ctr = Double(columns[ctrIndex])
+            else { continue }
             let current = day.rows[columns[videoIndex]] ?? [0, 0]
             day.rows[columns[videoIndex]] = [current[0] + impressions, current[1] + impressions * ctr]
             day.maxCTR = max(day.maxCTR, ctr)
@@ -1088,7 +1312,7 @@ final class YouTubeService {
         // Application Support, not Caches: iOS can wipe Caches, and this history can't be downloaded again
         let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        return folder.appendingPathComponent("reach-v2-\(lastChannel?.id ?? "me").json")
+        return folder.appendingPathComponent("reach-v3-\(lastChannel?.id ?? "me").json")
     }
 
     private func loadReachCache() -> [String: ReachDay] {

@@ -49,6 +49,7 @@ struct IntelBlackCard: ViewModifier {
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             )
+            .compositingGroup()   // shadow on the card only, not on the text and bars inside
             .shadow(color: Color.black.opacity(0.18), radius: 14, x: 0, y: 8)
     }
 }
@@ -109,7 +110,7 @@ struct IntelligenceView: View {
 
     private var page: some View {
         GeometryReader { geo in
-            let topInset = geo.safeAreaInsets.top
+            let topInset = max(geo.safeAreaInsets.top, DeviceInsets.top)
 
             ZStack(alignment: .top) {
                 HomeLook.page
@@ -156,6 +157,7 @@ struct IntelligenceView: View {
                     .frame(maxWidth: .infinity)
                     .opacity(scrollY < -120 ? 1 : 0)
                     .animation(.easeOut(duration: 0.2), value: scrollY < -120)
+                    .allowsHitTesting(false)   // never blocks taps on the header
             }
         }
         .ignoresSafeArea(edges: .top)
@@ -188,10 +190,11 @@ struct IntelligenceView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("What the data says")
+                Text("What the data says about your channel")
                     .font(.system(size: 28, weight: .bold))
                     .foregroundColor(.white)
-                Text("Patterns, fixes and chances to grow, from your last \(vm.shownVideos.count) \(showingShorts ? "Shorts" : "videos").")
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("The big picture across your last \(vm.shownVideos.count) \(showingShorts ? "Shorts" : "videos"). For one video at a time, open it in Coach.")
                     .font(.system(size: 15))
                     .foregroundColor(.white.opacity(0.7))
                     .fixedSize(horizontal: false, vertical: true)
@@ -423,7 +426,7 @@ struct PostingTimeCard: View {
             Text(day)
                 .font(.system(size: 22, weight: .bold))
                 .foregroundColor(HomeLook.ink)
-            Text("\(formatViews(views)) avg views")
+            Text("Usually \(formatViews(views)) views")
                 .font(.system(size: 13))
                 .foregroundColor(HomeLook.secondary)
         }

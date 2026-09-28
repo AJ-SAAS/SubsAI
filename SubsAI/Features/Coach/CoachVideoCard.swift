@@ -1,4 +1,6 @@
 // Features/Coach/CoachVideoCard.swift
+// One video in the Coach list. White card, thin grey border (same as Home).
+// Purple = good, orange = needs work.
 import SwiftUI
 
 struct CoachVideoCard: View {
@@ -23,132 +25,102 @@ struct CoachVideoCard: View {
 
     private var repColor: Color {
         switch replicationScore {
-        case .replicate: return .green
-        case .oneOff:    return .yellow
-        case .avoid:     return .red
+        case .replicate: return HomeLook.purple
+        case .oneOff:    return HomeLook.secondary
+        case .avoid:     return HomeLook.orangeText
         case nil:        return .clear
         }
-    }
-
-    // ✅ GPV color
-    private var gpvColor: Color {
-        let gpv = video.growthPerView
-        if gpv >= 3.0 { return .green }
-        if gpv >= 1.0 { return .yellow }
-        if gpv > 0    { return .red }
-        return AppTheme.textTertiary
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
 
-            // MARK: - Top row
-            HStack(spacing: 10) {
+            // Thumbnail, title, score
+            HStack(alignment: .top, spacing: 12) {
+                VideoThumbnailMini(video: video)
+                    .frame(width: 96, height: 54)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .background(HomeLook.fill.clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous)))
 
-                // Thumbnail
-                ZStack(alignment: .topTrailing) {
-                    VideoThumbnailMini(video: video)
-                        .frame(width: 90, height: 52)
-                        .cornerRadius(8)
-                        .clipped()
-
-                    Circle()
-                        .fill(verdict.healthColor)
-                        .frame(width: 7, height: 7)
-                        .padding(5)
-                }
-
-                // Title + meta
                 VStack(alignment: .leading, spacing: 4) {
                     Text(video.title)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(AppTheme.textPrimary)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(HomeLook.ink)
                         .lineLimit(2)
-                        .lineSpacing(2)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    // ✅ GPV added to meta line
-                    HStack(spacing: 4) {
-                        Text(viewsText)
-                            .font(.system(size: 11))
-                            .foregroundColor(AppTheme.textTertiary)
-
-                        if video.growthPerView > 0 {
-                            Text("·")
-                                .font(.system(size: 11))
-                                .foregroundColor(AppTheme.textTertiary)
-                            Text(video.growthPerViewLabel)
-                                .font(.system(size: 11))
-                                .foregroundColor(gpvColor)
-                        }
-                    }
-
-                    Text(daysAgoText)
-                        .font(.system(size: 11))
-                        .foregroundColor(AppTheme.textTertiary)
+                    Text(metaLine)
+                        .font(.system(size: 12))
+                        .foregroundColor(HomeLook.secondary)
+                        .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                // Score + replication
-                VStack(alignment: .trailing, spacing: 4) {
+                VStack(alignment: .trailing, spacing: 3) {
                     Text("\(video.healthScore)")
-                        .font(.system(size: 20, weight: .medium, design: .serif))
+                        .font(.system(size: 22, weight: .bold))
                         .foregroundColor(verdict.healthColor)
-                        .lineLimit(1)
-
                     Text(verdict.healthLabel)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(verdict.healthColor)
+                        .font(.system(size: 10, weight: .bold))
                         .kerning(0.4)
                         .textCase(.uppercase)
-
+                        .foregroundColor(verdict.healthColor)
                     if let rep = replicationScore {
                         Text(rep.rawValue)
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(.system(size: 10, weight: .semibold))
                             .foregroundColor(repColor)
-                            .padding(.horizontal, 6)
+                            .padding(.horizontal, 7)
                             .padding(.vertical, 2)
-                            .background(repColor.opacity(0.12))
-                            .cornerRadius(6)
+                            .background(Capsule().fill(repColor.opacity(0.1)))
+                            .padding(.top, 2)
                     }
                 }
                 .frame(minWidth: 60, alignment: .trailing)
             }
-            .padding(.bottom, 10)
+            .padding(.bottom, 12)
 
-            // MARK: - Coach line
-            Divider()
-                .padding(.bottom, 8)
+            Rectangle().fill(HomeLook.hairline).frame(height: 1)
+                .padding(.bottom, 10)
 
-            HStack(spacing: 8) {
-                ZStack {
-                    Circle()
-                        .fill(fix.color.opacity(0.1))
-                        .frame(width: 26, height: 26)
-                    Image(systemName: fix.systemImage)
-                        .font(.system(size: 11))
-                        .foregroundColor(fix.color)
-                }
-                .frame(width: 26, height: 26)
+            // What to do about it
+            HStack(spacing: 10) {
+                Image(systemName: fix.systemImage)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(fix.color)
+                    .frame(width: 26, height: 26)
+                    .background(Circle().fill(fix.color.opacity(0.12)))
 
                 Text(fix.coachLine)
-                    .font(.system(size: 11))
-                    .foregroundColor(AppTheme.textSecondary)
-                    .lineSpacing(3)
+                    .font(.system(size: 13))
+                    .foregroundColor(HomeLook.secondary)
                     .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11))
-                    .foregroundColor(AppTheme.textTertiary)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(HomeLook.hairline)
             }
         }
-        .padding(12)
-        .background(AppTheme.cardBackground)
-        .cornerRadius(18)
-        .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(AppTheme.borderSubtle, lineWidth: 0.5)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.white)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(HomeLook.hairline, lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+    }
+
+    /// "12K views · 2.1 subs/1K · 5d ago"
+    private var metaLine: String {
+        var parts = [viewsText]
+        if video.views >= 1_000 && video.growthPerView > 0 {
+            parts.append(String(format: "%.1f subs/1K", video.growthPerView))
+        }
+        parts.append(daysAgoText)
+        return parts.joined(separator: " · ")
     }
 }

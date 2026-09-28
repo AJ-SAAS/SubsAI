@@ -66,11 +66,9 @@ struct WelcomeView: View {
                         Button {
                             if currentPage < pages.count - 1 {
                                 currentPage += 1
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
-                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                }
+                                Haptics.tap(big: true)
                             } else {
-                                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                                Haptics.success()
                                 onContinue()
                             }
                         } label: {
@@ -123,6 +121,10 @@ struct WelcomeView: View {
             withAnimation(.easeOut(duration: 0.7)) {
                 animateIn = true
             }
+            // Start the haptic engine now, while nothing is moving yet.
+            // Before, the FIRST vibration in the app happened on screen 2, and
+            // starting the engine can block the phone for a moment (the freeze).
+            Haptics.warmUp()
         }
         // One gentle pulse on the button when the page's animation is done.
         // (No auto-swipe: people read at different speeds.)
@@ -210,6 +212,39 @@ struct WelcomeView: View {
                     .padding(16)
             }
         }
+    }
+}
+
+// MARK: - HAPTICS
+// One shared, pre-started engine for every vibration in onboarding.
+// Making a new generator for each tap means the engine may have to start up
+// on the spot, on the main thread, right in the middle of an animation.
+@MainActor
+enum Haptics {
+    /// Set to false to test without any vibration at all
+    static var enabled = true
+
+    private static let light = UIImpactFeedbackGenerator(style: .light)
+    private static let medium = UIImpactFeedbackGenerator(style: .medium)
+    private static let notify = UINotificationFeedbackGenerator()
+
+    static func warmUp() {
+        guard enabled else { return }
+        light.prepare()
+        medium.prepare()
+        notify.prepare()
+    }
+
+    static func tap(big: Bool = false) {
+        guard enabled else { return }
+        let generator = big ? medium : light
+        generator.impactOccurred()
+        generator.prepare()   // stay ready for the next one
+    }
+
+    static func success() {
+        guard enabled else { return }
+        notify.notificationOccurred(.success)
     }
 }
 
@@ -738,7 +773,7 @@ struct TipsRevealView: View {
                 onTime = await clock.wait(until: base)
                 if Task.isCancelled { return }
                 sceneStep(onTime, .spring(response: 0.4, dampingFraction: 0.85)) { tipIndex = k }
-                if onTime { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+                if onTime { Haptics.tap() }
                 
                 onTime = await clock.wait(until: base + 0.3)
                 sceneStep(onTime, .spring(response: 0.5, dampingFraction: 0.7)) { _ = visualsOn.insert(k) }
@@ -755,7 +790,7 @@ struct TipsRevealView: View {
                 showSummary = true
             }
             confettiOn = onTime
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            Haptics.success()
             for i in 0..<3 {
                 sceneStep(onTime, .spring(response: 0.4, dampingFraction: 0.8).delay(0.15 + 0.12 * Double(i))) {
                     rowsOn[i] = true
@@ -1265,7 +1300,7 @@ struct RoadmapView: View {
             }
             if onTime {
                 let big = (i == 1 || i == milestones.count - 1)
-                UIImpactFeedbackGenerator(style: big ? .medium : .light).impactOccurred()
+                Haptics.tap(big: big)
             }
             at += 0.6 + ((i == 1) ? 0.5 : 0.15)
         }

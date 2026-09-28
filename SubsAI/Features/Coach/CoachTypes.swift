@@ -14,10 +14,10 @@ enum CoachFix: String, Codable, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .thumbnail:  return "Fix your thumbnail & title"
-        case .hook:       return "Fix your first 10 seconds"
-        case .retention:  return "Improve mid-video retention"
-        case .discovery:  return "Improve discovery & SEO"
+        case .thumbnail:  return "Fix your thumbnail and title"
+        case .hook:       return "Fix your first 30 seconds"
+        case .retention:  return "Keep people watching longer"
+        case .discovery:  return "Help more people find it"
         case .none:       return "This video is healthy"
         }
     }
@@ -42,27 +42,26 @@ enum CoachFix: String, Codable, CaseIterable, Identifiable {
         }
     }
 
+    // Brand colors: purple = good, orange = needs work
     var color: Color {
         switch self {
-        case .thumbnail, .hook: return .red
-        case .retention:        return .yellow
-        case .discovery:        return Color(red: 0.49, green: 0.44, blue: 1.0)
-        case .none:             return .green
+        case .none: return HomeLook.purple
+        default:    return HomeLook.orange
         }
     }
 
     var coachLine: String {
         switch self {
         case .thumbnail:
-            return "CTR is too low — your title reads like a tutorial, not a story. Reframe around a specific result."
+            return "Few people click it. Show one clear result in the thumbnail, and make the title promise it."
         case .hook:
-            return "Viewers are leaving in the first 30 seconds. Open with the payoff, not the setup."
+            return "People leave in the first 30 seconds. Start with the best part, not the setup."
         case .retention:
-            return "Drop-off mid-video. Add a re-hook before the 3-minute mark to pull viewers back in."
+            return "People leave in the middle. Cut the slow parts and tease what's coming next."
         case .discovery:
-            return "Views are below expectations. Your metadata isn't helping YouTube surface this video."
+            return "Fewer views than usual. Use the words people search for in the title and description."
         case .none:
-            return "Performing well. Study this hook and repeat the format on your next upload."
+            return "Doing well. Make another video like this one."
         }
     }
 }
@@ -113,11 +112,12 @@ struct CoachVerdict: Codable, Equatable, Hashable {
         }
     }
 
+    // Purple = good, grey = keep an eye on it, orange = fix it
     var healthColor: Color {
         switch fix {
-        case .none:                   return .green
-        case .discovery, .retention:  return .yellow
-        case .hook, .thumbnail:       return .red
+        case .none:                   return HomeLook.purple
+        case .discovery, .retention:  return HomeLook.secondary
+        case .hook, .thumbnail:       return HomeLook.orangeText
         }
     }
 

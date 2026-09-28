@@ -1,4 +1,8 @@
 // Features/Coach/CoachView.swift
+// New look, same as Home, Settings and Intelligence: gradient header, white page,
+// one black hero card, white video cards. Purple = good, orange = needs work.
+// Uses HomeLook, GradientHeader, DeviceInsets (DashboardView.swift)
+// and IntelCard, IntelBlackCard (IntelligenceView.swift).
 import SwiftUI
 
 enum VideoSortOrder: String, CaseIterable {
@@ -10,18 +14,27 @@ enum VideoSortOrder: String, CaseIterable {
     case mostViews       = "Most views"
 }
 
+private struct CoachScrollKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
 struct CoachView: View {
 
     @ObservedObject var vm: CoachViewModel
     @State private var authError: AuthError?
-    @State private var sortOrder: VideoSortOrder = .bestPerforming
+    // Newest first by default. The last choice is remembered.
+    @AppStorage("coach.sortOrder") private var sortOrder: VideoSortOrder = .latest
     @State private var showSortSheet = false
     @State private var showPaywall = false
+    @State private var scrollY: CGFloat = 0
     @ObservedObject private var premium = PremiumStatus.shared
 
     init(vm: CoachViewModel) {
         self.vm = vm
     }
+
+    private var showingShorts: Bool { vm.hasBothFormats && vm.formatFilter == .shorts }
 
     private var sortedVideos: [Video] {
         switch sortOrder {
@@ -36,146 +49,83 @@ struct CoachView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
+            GeometryReader { geo in
+                let topInset = max(geo.safeAreaInsets.top, DeviceInsets.top)
 
-                // Dashboard-style gradient background
-                LinearGradient(
-                    colors: [
-                        AppTheme.accent.opacity(0.65),
-                        AppTheme.accent.opacity(0.40),
-                        AppTheme.accent.opacity(0.15),
-                        Color.black.opacity(0.98)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                ZStack(alignment: .top) {
+                    HomeLook.page
 
-                VStack(spacing: 0) {
-                    RadialGradient(
-                        colors: [AppTheme.accent.opacity(0.25), Color.clear],
-                        center: .top,
-                        startRadius: 0,
-                        endRadius: 380
-                    )
-                    .frame(height: 360)
-                    .ignoresSafeArea(edges: .top)
-
-                    Spacer()
-                }
-
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 16) {
-
-                        Text("Coach")
-                            .font(.system(size: 29, weight: .medium, design: .serif))
-                            .foregroundColor(AppTheme.textPrimary)
-                            .padding(.top, 8)
-
-                        // Only shows when the channel makes both Shorts and long videos
-                        if vm.hasBothFormats {
-                            FormatSwitch(selection: $vm.formatFilter)
-                        }
-
-                        if !vm.videos.isEmpty {
-                            NextUploadBriefingCard(
-                                videos: vm.shownVideos,
-                                report: vm.intelligenceReport,
-                                postingTimeInsight: vm.postingTimeInsight,
-                                vm: vm
-                            )
-                        } else if vm.isLoading {
-                            diagnosisPlaceholder
-                        }
-
-                        if !vm.videos.isEmpty {
-
-                            HStack {
-                                Text(vm.hasBothFormats && vm.formatFilter == .shorts ? "Your Shorts" : "Your videos")
-                                    .font(.system(size: 17, weight: .semibold, design: .serif))
-                                    .foregroundColor(AppTheme.textPrimary)
-
-                                Spacer()
-
-                                Button {
-                                    showSortSheet = true
-                                } label: {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "arrow.up.arrow.down")
-                                            .font(.system(size: 12))
-                                        Text(sortOrder.rawValue)
-                                            .font(.system(size: 13))
-                                    }
-                                    .foregroundColor(AppTheme.textSecondary)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
-                                    .background(Color(.systemFill))
-                                    .cornerRadius(10)
-                                }
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            GeometryReader { g in
+                                Color.clear.preference(
+                                    key: CoachScrollKey.self,
+                                    value: g.frame(in: .named("coachScroll")).minY
+                                )
                             }
-                            .padding(.top, 4)
+                            .frame(height: 0)
 
-                            ForEach(sortedVideos) { video in
-                                if premium.isPremium {
-                                    NavigationLink {
-                                        CoachReviewView(
-                                            video: video,
-                                            allVideos: vm.videos,
-                                            postingTimeInsight: vm.postingTimeInsight,
-                                            vm: vm
-                                        )
-                                    } label: {
-                                        CoachVideoCard(
-                                            video: video,
-                                            replicationScore: vm.intelligenceReport?
-                                                .replicationScore(for: video)
-                                        )
+                            header
+                                .padding(.top, topInset + 10)
+                                .padding(.horizontal, 24)
+                                .padding(.bottom, 28)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(GradientHeader())
+
+                            VStack(alignment: .leading, spacing: 12) {
+                                if !vm.videos.isEmpty {
+                                    NextUploadBriefingCard(
+                                        videos: vm.shownVideos,
+                                        report: vm.intelligenceReport,
+                                        postingTimeInsight: vm.postingTimeInsight,
+                                        vm: vm
+                                    )
+                                    .padding(.bottom, 10)
+
+                                    videosHeader
+
+                                    ForEach(sortedVideos) { video in
+                                        videoRow(video)
                                     }
-                                    .buttonStyle(.plain)
+                                } else if vm.isLoading {
+                                    diagnosisPlaceholder
+                                    loadingState
                                 } else {
-                                    // Free users: video reviews are Premium (their latest video is free on Home)
-                                    Button { showPaywall = true } label: {
-                                        CoachVideoCard(
-                                            video: video,
-                                            replicationScore: vm.intelligenceReport?
-                                                .replicationScore(for: video)
-                                        )
-                                        // Lock sits on the thumbnail, so it doesn't cover the score
-                                        .overlay(alignment: .topLeading) {
-                                            Image(systemName: "lock.fill")
-                                                .font(.system(size: 10, weight: .bold))
-                                                .foregroundColor(.white)
-                                                .padding(6)
-                                                .background(Circle().fill(Color.black.opacity(0.6)))
-                                                .padding(16)
-                                        }
-                                    }
-                                    .buttonStyle(.plain)
+                                    emptyState
                                 }
                             }
+                            .padding(.horizontal, 16)
+                            .padding(.top, 20)
 
-                        } else if vm.isLoading {
-                            loadingState
-                        } else {
-                            emptyState
+                            Spacer(minLength: 120)
                         }
-
-                        Spacer(minLength: 40)
                     }
-                    .padding(.horizontal, 18)
+                    .coordinateSpace(name: "coachScroll")
+                    .refreshable { await vm.loadVideos() }
+                    .onPreferenceChange(CoachScrollKey.self) { scrollY = $0 }
+
+                    // Keeps the status bar readable once the header scrolls away
+                    HomeLook.ink
+                        .frame(height: topInset)
+                        .frame(maxWidth: .infinity)
+                        .opacity(scrollY < -120 ? 1 : 0)
+                        .animation(.easeOut(duration: 0.2), value: scrollY < -120)
+                        .allowsHitTesting(false)   // never blocks taps on the header
                 }
             }
+            .ignoresSafeArea(edges: .top)
             .navigationBarHidden(true)
         }
-        .confirmationDialog("Sort videos by", isPresented: $showSortSheet, titleVisibility: .visible) {
-            ForEach(VideoSortOrder.allCases, id: \.self) { order in
-                Button(order.rawValue) {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        sortOrder = order
-                    }
-                }
+        // Our own sort sheet: grey background, white text (the system one was hard to read)
+        .sheet(isPresented: $showSortSheet) {
+            SortSheet(selection: sortOrder) { order in
+                withAnimation(.easeInOut(duration: 0.2)) { sortOrder = order }
+                showSortSheet = false
             }
-            Button("Cancel", role: .cancel) { }
+            .presentationDetents([.height(440)])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(SortSheet.background)
+            .presentationCornerRadius(28)
         }
         .onAppear {
             Task { await loadSafely() }
@@ -198,43 +148,132 @@ struct CoachView: View {
         }
     }
 
+    // MARK: - Header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Coach")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("What to fix next")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundColor(.white)
+                Text(showingShorts
+                     ? "Every Short, checked. Tap one to see its review."
+                     : "Every video, checked. Tap one to see its review.")
+                    .font(.system(size: 15))
+                    .foregroundColor(.white.opacity(0.7))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // Only shows when the channel makes both Shorts and long videos
+            if vm.hasBothFormats {
+                FormatSwitch(selection: $vm.formatFilter)
+            }
+        }
+    }
+
+    // MARK: - Your videos
+
+    private var videosHeader: some View {
+        HStack {
+            Text(showingShorts ? "Your Shorts" : "Your videos")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(HomeLook.ink)
+
+            Spacer()
+
+            Button {
+                showSortSheet = true
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.up.arrow.down")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(sortOrder.rawValue)
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .foregroundColor(HomeLook.ink)
+                .padding(.horizontal, 12)
+                .frame(height: 32)
+                .background(Capsule().fill(HomeLook.fill))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private func videoRow(_ video: Video) -> some View {
+        let card = CoachVideoCard(
+            video: video,
+            replicationScore: vm.intelligenceReport?.replicationScore(for: video)
+        )
+        if premium.isPremium {
+            NavigationLink {
+                CoachReviewView(
+                    video: video,
+                    allVideos: vm.videos,
+                    postingTimeInsight: vm.postingTimeInsight,
+                    vm: vm
+                )
+            } label: { card }
+            .buttonStyle(.plain)
+        } else {
+            // Free users: video reviews are Premium (their latest video is free on Home)
+            Button { showPaywall = true } label: {
+                card
+                    // Lock sits on the thumbnail, so it doesn't cover the score
+                    .overlay(alignment: .topLeading) {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(6)
+                            .background(Circle().fill(Color.black.opacity(0.6)))
+                            .padding(18)
+                    }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Loading / empty
+
     private var diagnosisPlaceholder: some View {
-        RoundedRectangle(cornerRadius: 22)
-            .fill(AppTheme.accent.opacity(0.06))
-            .frame(height: 140)
-            .overlay(ProgressView())
-            .overlay(
-                RoundedRectangle(cornerRadius: 22)
-                    .stroke(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
-            )
+        RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .fill(HomeLook.ink)
+            .frame(height: 170)
+            .overlay(ProgressView().tint(.white))
     }
 
     private var loadingState: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 14) {
             ProgressView()
             Text("Loading your videos…")
-                .font(.subheadline)
-                .foregroundColor(AppTheme.textSecondary)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(HomeLook.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 40)
+        .padding(.top, 30)
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             Image(systemName: "video.slash")
-                .font(.system(size: 37))
-                .foregroundColor(AppTheme.textTertiary)
-            Text("No videos found")
-                .font(.headline)
-                .foregroundColor(AppTheme.textSecondary)
-            Text("Videos from your channel will appear here once loaded.")
-                .font(.subheadline)
-                .foregroundColor(AppTheme.textTertiary)
+                .font(.system(size: 34))
+                .foregroundColor(HomeLook.hairline)
+            Text("No videos yet")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(HomeLook.ink)
+            Text("Your videos will show up here once they load. Pull down to try again.")
+                .font(.system(size: 15))
+                .foregroundColor(HomeLook.secondary)
                 .multilineTextAlignment(.center)
+                .padding(.horizontal, 20)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 60)
+        .padding(.top, 50)
     }
 
     private func loadSafely() async {
@@ -248,7 +287,8 @@ struct CoachView: View {
     }
 }
 
-// MARK: - NextUploadBriefingCard (Fixed for Light + Dark Mode)
+// MARK: - Before your next upload (black hero card, like Home's latest video)
+
 struct NextUploadBriefingCard: View {
     let videos: [Video]
     let report: ChannelIntelligenceReport?
@@ -256,7 +296,7 @@ struct NextUploadBriefingCard: View {
     var vm: CoachViewModel? = nil
 
     private var channelAvgCTR: Double {
-        // Only videos where YouTube gave us a real CTR
+        // Only videos where YouTube gave us a real CTR (Shorts never have one)
         let ctrs = videos.compactMap { $0.analytics }.filter { $0.hasCTR }.map { $0.ctr }
         guard !ctrs.isEmpty else { return 0 }
         return ctrs.reduce(0, +) / Double(ctrs.count)
@@ -264,179 +304,144 @@ struct NextUploadBriefingCard: View {
 
     // Best performer = most views (a ratio like subs per 1K can be won by a 40-view video)
     private var bestVideo: Video? {
-        videos.filter { $0.views > 0 }
-              .max(by: { $0.views < $1.views })
+        videos.filter { $0.views > 0 }.max(by: { $0.views < $1.views })
+    }
+
+    private func shortTitle(_ title: String) -> String {
+        title.count > 45 ? String(title.prefix(45)).trimmingCharacters(in: .whitespaces) + "…" : title
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("BEFORE YOUR NEXT UPLOAD")
+                .font(.system(size: 11, weight: .bold))
+                .kerning(1.1)
+                .foregroundColor(HomeLook.purpleLight)
 
-            // Header
-            HStack(spacing: 6) {
-                Image(systemName: "video.badge.plus")
-                    .font(.system(size: 14))
-                    .foregroundColor(AppTheme.accent)
-
-                Text("BEFORE YOUR NEXT UPLOAD")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-                    .kerning(1.2)
-                    .textCase(.uppercase)
-            }
-
-            VStack(alignment: .leading, spacing: 16) {
-
-                // CTR Line with bold percentage
+            VStack(alignment: .leading, spacing: 14) {
                 if channelAvgCTR > 0 {
                     let ctrText = "Avg CTR \(String(format: "%.1f", channelAvgCTR * 100))%"
                     let fullText = channelAvgCTR >= 0.05
                         ? "\(ctrText). Strong. Keep this thumbnail style."
                         : "\(ctrText). Needs work. Plan the thumbnail before you film."
-
                     BriefingLine(icon: "cursorarrow.click", text: fullText, boldPart: ctrText)
                 }
 
-                // Best Video Line with bold "Best Performer"
                 if let best = bestVideo {
-                    let boldTitle = "Best Performer"
-                    let fullText = "\(boldTitle): \"\(best.title.prefix(45))...\" Make more like this."
-
-                    BriefingLine(icon: "arrow.triangle.2.circlepath", text: fullText, boldPart: boldTitle)
+                    let boldTitle = "Best performer"
+                    BriefingLine(
+                        icon: "arrow.triangle.2.circlepath",
+                        text: "\(boldTitle): \"\(shortTitle(best.title))\" Make more like this.",
+                        boldPart: boldTitle
+                    )
                 }
 
-                // Posting Insight with bold day
+                // Same best day as Intelligence (one shared calculation)
                 if let insight = postingTimeInsight, insight.isReliable {
-                    // Was hard-coded to "Monday" before
                     let boldDay = "\(insight.bestDay) is your best posting day"
-                    let fullText = "\(boldDay). Post your next video then."
-
-                    BriefingLine(icon: "clock", text: fullText, boldPart: boldDay)
+                    BriefingLine(icon: "calendar", text: "\(boldDay). Post your next video then.", boldPart: boldDay)
                 } else if let pattern = report?.winningPatterns.first {
-                    BriefingLine(
-                        icon: "chart.line.uptrend.xyaxis",
-                        text: "\(pattern.title). Try this again next."
-                    )
+                    BriefingLine(icon: "chart.line.uptrend.xyaxis", text: "\(pattern.title). Try this again next.")
                 }
             }
 
-            // Intelligence Link - Changed to Yellow for better visibility
             if let vm = vm {
                 NavigationLink {
                     IntelligenceView(vm: vm, showsBack: true)
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         Text("See all patterns in Intelligence")
-                            .font(.system(size: 13.5, weight: .semibold))
-                            .foregroundColor(.yellow)                    // Changed to yellow
+                            .font(.system(size: 14, weight: .semibold))
                         Image(systemName: "arrow.right")
-                            .font(.system(size: 13))
-                            .foregroundColor(.yellow)
+                            .font(.system(size: 12, weight: .bold))
                     }
+                    .foregroundColor(HomeLook.purpleLight)
                 }
+                .buttonStyle(.plain)
             }
         }
-        .padding(20)
-        .background(Color(hex: "#181818"))
-        .cornerRadius(24)
-        .overlay(
-            RoundedRectangle(cornerRadius: 24)
-                .stroke(Color.white.opacity(0.07), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.4), radius: 16, x: 0, y: 8)
+        .modifier(IntelBlackCard())
     }
 }
 
-// MARK: - Updated BriefingLine with Bold Support
+// MARK: - One line on the black card, with an optional bold start
+
 struct BriefingLine: View {
     let icon: String
     let text: String
-    var boldPart: String? = nil   // The part we want to make bold
+    var boldPart: String? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 15))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(.white.opacity(0.9))
                 .frame(width: 20)
+                .padding(.top, 1)
 
-            // Support bold text using + operator
             if let bold = boldPart, text.contains(bold) {
                 Text(bold)
-                    .font(.system(size: 14.5, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(.white)
                 + Text(text.replacingOccurrences(of: bold, with: ""))
-                    .font(.system(size: 14.5))
-                    .foregroundColor(.white.opacity(0.85))
+                    .font(.system(size: 15))
+                    .foregroundColor(.white.opacity(0.75))
             } else {
                 Text(text)
-                    .font(.system(size: 14.5))
-                    .foregroundColor(.white.opacity(0.9))
-                    .lineSpacing(3.5)
+                    .font(.system(size: 15))
+                    .foregroundColor(.white.opacity(0.85))
             }
         }
         .fixedSize(horizontal: false, vertical: true)
-        }
     }
+}
 
-// MARK: - Backward Compatibility Structs (unchanged)
+// MARK: - Backward compatibility (other screens may use these)
+
 struct ImprovedDiagnosisCard: View {
     let diagnosis: ChannelDiagnosis
     let report: ChannelIntelligenceReport?
 
     private var bullets: [String] {
-        let body = diagnosis.body
-        let sentences = body.components(separatedBy: ". ")
+        let sentences = diagnosis.body.components(separatedBy: ". ")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         return Array(sentences.prefix(3))
     }
 
-    private var healthChips: [(label: String, color: Color)] {
+    private var healthChips: [(label: String, good: Bool)] {
         guard let report = report else { return [] }
-        var chips: [(String, Color)] = []
+        var chips: [(String, Bool)] = []
         let gqs = report.growthQualityScore
-        if gqs.retentionStrength >= 0.40 { chips.append(("Retention ✓", .green)) }
-        else if gqs.retentionStrength >= 0.25 { chips.append(("Retention low", .yellow)) }
-        else { chips.append(("Retention ✗", .red)) }
-
+        chips.append(gqs.retentionStrength >= 0.40 ? ("Watch time good", true) : ("Watch time low", false))
         let avgCTR = report.channelAvgCTR   // 0 = not known yet
-        if avgCTR >= 0.06 { chips.append(("CTR ✓", .green)) }
-        else if avgCTR >= 0.04 { chips.append(("CTR low", .yellow)) }
-        else if avgCTR > 0 { chips.append(("CTR needs work", .red)) }
-
-        if gqs.composite >= 7.0 { chips.append(("Growth strong", .green)) }
-        else if gqs.composite >= 5.0 { chips.append(("Growth moderate", .yellow)) }
-        else { chips.append(("Growth low", .red)) }
-
+        if avgCTR >= 0.06 { chips.append(("CTR good", true)) }
+        else if avgCTR > 0 { chips.append(("CTR low", false)) }
+        chips.append(gqs.composite >= 7.0 ? ("Growth strong", true) : ("Growth slow", false))
         return chips
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 5) {
-                Circle().fill(AppTheme.accent).frame(width: 5, height: 5)
-                Text("Channel diagnosis")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(AppTheme.accent)
-                    .kerning(1.0)
-                    .textCase(.uppercase)
-            }
+            Text("CHANNEL DIAGNOSIS")
+                .font(.system(size: 11, weight: .bold))
+                .kerning(1.1)
+                .foregroundColor(HomeLook.purple)
             Text(diagnosis.headline)
-                .font(.system(size: 18, weight: .medium, design: .serif))
-                .foregroundColor(AppTheme.textPrimary)
-                .lineSpacing(3)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(HomeLook.ink)
+                .fixedSize(horizontal: false, vertical: true)
 
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(bullets, id: \.self) { bullet in
-                    HStack(alignment: .top, spacing: 7) {
+                    HStack(alignment: .top, spacing: 8) {
                         Circle()
-                            .fill(AppTheme.accent.opacity(0.5))
-                            .frame(width: 4, height: 4)
-                            .padding(.top, 5)
+                            .fill(HomeLook.purple)
+                            .frame(width: 5, height: 5)
+                            .padding(.top, 7)
                         Text(bullet + (bullet.hasSuffix(".") ? "" : "."))
-                            .font(.system(size: 13))
-                            .foregroundColor(AppTheme.textSecondary)
-                            .lineSpacing(3)
+                            .font(.system(size: 14))
+                            .foregroundColor(HomeLook.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -447,24 +452,17 @@ struct ImprovedDiagnosisCard: View {
                     HStack(spacing: 6) {
                         ForEach(healthChips, id: \.label) { chip in
                             Text(chip.label)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(chip.color)
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 4)
-                                .background(chip.color.opacity(0.1))
-                                .cornerRadius(10)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(chip.good ? HomeLook.purple : HomeLook.orangeText)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Capsule().fill((chip.good ? HomeLook.purple : HomeLook.orange).opacity(0.1)))
                         }
                     }
                 }
             }
         }
-        .padding(18)
-        .background(AppTheme.accent.opacity(0.06))
-        .cornerRadius(22)
-        .overlay(
-            RoundedRectangle(cornerRadius: 22)
-                .stroke(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
-        )
+        .modifier(IntelCard())
     }
 }
 
@@ -473,10 +471,7 @@ struct CoachVideoCardWithReplication: View {
     let report: ChannelIntelligenceReport?
 
     var body: some View {
-        CoachVideoCard(
-            video: video,
-            replicationScore: report?.replicationScore(for: video)
-        )
+        CoachVideoCard(video: video, replicationScore: report?.replicationScore(for: video))
     }
 }
 
@@ -513,5 +508,57 @@ struct FormatSwitch: View {
         }
         .padding(4)
         .background(Capsule().fill(Color.white.opacity(0.1)))
+    }
+}
+
+
+// MARK: - Sort sheet (grey, white text)
+
+struct SortSheet: View {
+    let selection: VideoSortOrder
+    let onPick: (VideoSortOrder) -> Void
+
+    static let background = Color(red: 0.17, green: 0.17, blue: 0.18)   // #2B2B2E
+    private let row = Color.white.opacity(0.08)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Sort videos by")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 26)
+                .padding(.bottom, 16)
+
+            VStack(spacing: 0) {
+                ForEach(Array(VideoSortOrder.allCases.enumerated()), id: \.element) { index, order in
+                    if index > 0 {
+                        Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1).padding(.leading, 18)
+                    }
+                    Button { onPick(order) } label: {
+                        HStack {
+                            Text(order.rawValue)
+                                .font(.system(size: 16, weight: order == selection ? .semibold : .regular))
+                                .foregroundColor(.white)
+                            Spacer()
+                            if order == selection {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        .padding(.horizontal, 18)
+                        .frame(height: 50)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(row))
+            .padding(.horizontal, 16)
+
+            Spacer(minLength: 0)
+        }
+        .preferredColorScheme(.dark)
     }
 }

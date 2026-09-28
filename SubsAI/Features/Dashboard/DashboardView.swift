@@ -134,6 +134,7 @@ struct DashboardView: View {
                         .frame(maxWidth: .infinity)
                         .opacity(scrollY < -120 ? 1 : 0)
                         .animation(.easeOut(duration: 0.2), value: scrollY < -120)
+                        .allowsHitTesting(false)   // never blocks taps on the header
                 }
             }
             .ignoresSafeArea(edges: .top)
@@ -897,6 +898,18 @@ enum HomeMetric: String, CaseIterable, Identifiable {
 // MARK: - Header background (black + purple sweep)
 
 /// Shared with Settings.
+/// The real status bar height. A pushed screen with a hidden nav bar can get 0
+/// from GeometryReader, which puts the title under the clock.
+enum DeviceInsets {
+    static var top: CGFloat {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }
+        return window?.safeAreaInsets.top ?? 47
+    }
+}
+
 struct GradientHeader: View {
     var body: some View {
         ZStack {
@@ -966,6 +979,7 @@ private struct FloatingCard: ViewModifier {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(Color.white)
             )
+            .compositingGroup()   // shadow on the card only, not on the text and bars inside
             .shadow(color: Color.black.opacity(0.12), radius: 15, x: 0, y: 8)
     }
 }
@@ -990,6 +1004,7 @@ private struct BlackCard: ViewModifier {
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             )
+            .compositingGroup()   // shadow on the card only, not on the text and bars inside
             .shadow(color: Color.black.opacity(0.18), radius: 14, x: 0, y: 8)
     }
 }

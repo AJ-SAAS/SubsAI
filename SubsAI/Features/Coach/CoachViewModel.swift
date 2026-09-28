@@ -258,43 +258,50 @@ final class CoachViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Posting Time Analysis (unchanged)
+    // MARK: - Best day to post
+    /// The ONE place that works out the best posting day. Coach and Intelligence both use it,
+    /// so they can never disagree.
+    /// - Only videos 7+ days old (newer ones haven't had time to get their views)
+    /// - Only days with 2+ videos (one lucky video can't make a day "best")
+    /// - Middle views per day, not the average (one viral video can't skew it)
     /// Pass a list to check only those videos (for example only Shorts, or only long videos)
     func analyzePostingTimes(for list: [Video]? = nil) -> PostingTimeInsight? {
-        let videosWithViews = (list ?? videos).filter { $0.views > 0 }
-        guard videosWithViews.count >= 4 else { return nil }
+        let settled = (list ?? videos).filter { $0.views > 0 && $0.ageInDays >= 7 }
+        guard settled.count >= 4 else { return nil }
 
         let formatter = DateFormatter()
         formatter.dateFormat = "EEEE"
 
         var dayGroups: [String: [Int]] = [:]
-        for video in videosWithViews {
-            let day = formatter.string(from: video.publishedAt)
-            dayGroups[day, default: []].append(video.views)
+        for video in settled {
+            dayGroups[formatter.string(from: video.publishedAt), default: []].append(video.views)
         }
+        let usableDays = dayGroups.filter { $0.value.count >= 2 }
+        guard usableDays.count >= 2 else { return nil }
 
-        guard dayGroups.count >= 2 else { return nil }
-
-        let dayAverages = dayGroups.mapValues { views -> Int in
-            views.reduce(0, +) / views.count
+        func middle(_ values: [Int]) -> Int {
+            let sorted = values.sorted()
+            return sorted[sorted.count / 2]
         }
+        let dayMiddles = usableDays.mapValues(middle)
 
         guard
-            let best  = dayAverages.max(by: { $0.value < $1.value }),
-            let worst = dayAverages.min(by: { $0.value < $1.value }),
+            let best  = dayMiddles.max(by: { $0.value < $1.value }),
+            let worst = dayMiddles.min(by: { $0.value < $1.value }),
             best.key != worst.key
         else { return nil }
 
         let gap = Double(best.value - worst.value) / Double(max(best.value, 1))
         guard gap >= 0.20 else { return nil }
 
+        let counted = usableDays.values.reduce(0) { $0 + $1.count }
         return PostingTimeInsight(
             bestDay: best.key,
             bestDayAvgViews: best.value,
             worstDay: worst.key,
             worstDayAvgViews: worst.value,
-            sampleSize: videosWithViews.count,
-            isReliable: videosWithViews.count >= 8
+            sampleSize: counted,
+            isReliable: counted >= 8 && (usableDays[best.key]?.count ?? 0) >= 3 && (usableDays[worst.key]?.count ?? 0) >= 3
         )
     }
 
